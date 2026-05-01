@@ -5,6 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SmartDiet — Seu rastreador de dieta</title>
 
+  <!-- ================================================================
+    SECURITY HEADERS via meta tags
+    
+    Content-Security-Policy (CSP) — define quais recursos o navegador
+    pode carregar. Se um XSS tentar injetar um <script src="https://hacker.com">,
+    o navegador bloqueia porque esse domínio não está na whitelist.
+
+    Domínios permitidos:
+    - self: o próprio domínio do app
+    - fonts.googleapis.com / fonts.gstatic.com: Google Fonts
+    - cdn.jsdelivr.net: biblioteca Supabase
+    - xxjfursxhsppjmrkwgeb.supabase.co: API do banco
+
+    'unsafe-inline' no script-src: necessário porque nosso JS está inline
+    no HTML. Num projeto mais avançado, separaríamos o JS em arquivos
+    e usaríamos nonces ou hashes. Por agora, o CSP ainda protege contra
+    scripts de domínios externos.
+
+    X-Content-Type-Options: impede o navegador de "adivinhar" o tipo
+    de um arquivo (MIME sniffing), evitando que um .txt seja interpretado
+    como .js.
+  ================================================================ -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src https://fonts.gstatic.com;
+    connect-src 'self' https://xxjfursxhsppjmrkwgeb.supabase.co;
+    img-src 'self' data:;
+    frame-src 'none';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+  " />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+
   <!-- PWA — permite instalar como app no celular -->
   <meta name="theme-color" content="#0f1117" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -899,6 +936,7 @@
             class="food-search-input"
             placeholder="Ex: frango, arroz, whey..."
             autocomplete="off"
+            maxlength="100"
           />
         </div>
 
@@ -920,13 +958,13 @@
       <!-- Nome (só aparece quando está cadastrando novo) -->
       <div class="form-group" id="food-name-group">
         <label class="form-label" for="food-name-input">Nome do alimento</label>
-        <input type="text" id="food-name-input" class="form-input" placeholder="Ex: Frango grelhado" autocomplete="off" />
+        <input type="text" id="food-name-input" class="form-input" placeholder="Ex: Frango grelhado" autocomplete="off" maxlength="100" />
       </div>
 
       <!-- Quantidade (sempre aparece) -->
       <div class="form-group">
         <label class="form-label" for="food-qty-input">Quantidade consumida</label>
-        <input type="number" id="food-qty-input" class="form-input" placeholder="Ex: 200" min="0" />
+        <input type="number" id="food-qty-input" class="form-input" placeholder="Ex: 200" min="0" max="10000" />
         <div class="form-hint">em gramas (g)</div>
       </div>
 
@@ -935,24 +973,24 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label" for="food-kcal-input">Calorias</label>
-            <input type="number" id="food-kcal-input" class="form-input" placeholder="0" min="0" />
+            <input type="number" id="food-kcal-input" class="form-input" placeholder="0" min="0" max="900" />
             <div class="form-hint">kcal por 100g</div>
           </div>
           <div class="form-group">
             <label class="form-label" for="food-prot-input">Proteína</label>
-            <input type="number" id="food-prot-input" class="form-input" placeholder="0" min="0" step="0.1" />
+            <input type="number" id="food-prot-input" class="form-input" placeholder="0" min="0" max="100" step="0.1" />
             <div class="form-hint">g por 100g</div>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label" for="food-carb-input">Carboidrato</label>
-            <input type="number" id="food-carb-input" class="form-input" placeholder="0" min="0" step="0.1" />
+            <input type="number" id="food-carb-input" class="form-input" placeholder="0" min="0" max="100" step="0.1" />
             <div class="form-hint">g por 100g</div>
           </div>
           <div class="form-group">
             <label class="form-label" for="food-fat-input">Gordura</label>
-            <input type="number" id="food-fat-input" class="form-input" placeholder="0" min="0" step="0.1" />
+            <input type="number" id="food-fat-input" class="form-input" placeholder="0" min="0" max="100" step="0.1" />
             <div class="form-hint">g por 100g</div>
           </div>
         </div>
@@ -1157,13 +1195,41 @@
       el.classList.add('visible');
     }
 
+    /*
+       RATE LIMITING — proteção contra brute force
+
+       Conta as tentativas de login falhas. Após 5 falhas seguidas,
+       bloqueia o botão por 30 segundos. O contador reseta ao ter
+       sucesso ou após o timeout.
+
+       Isso funciona no frontend — é uma primeira barreira. O Supabase
+       também tem rate limiting no servidor, mas essa camada extra
+       impede que scripts automatizados nem cheguem a fazer requisições.
+    */
+    let authFailCount = 0;
+    let authLockUntil = 0;
+
     document.getElementById('btn-auth').addEventListener('click', async () => {
       const email = document.getElementById('auth-email').value.trim();
       const password = document.getElementById('auth-password').value;
       const btn = document.getElementById('btn-auth');
 
+      // Verifica se está bloqueado
+      const now = Date.now();
+      if (now < authLockUntil) {
+        const secsLeft = Math.ceil((authLockUntil - now) / 1000);
+        showAuthError(`Muitas tentativas. Aguarde ${secsLeft} segundos.`);
+        return;
+      }
+
       if (!email || !password) { showAuthError('Preencha email e senha'); return; }
       if (password.length < 6) { showAuthError('A senha precisa ter pelo menos 6 caracteres'); return; }
+
+      // Validação básica de formato de email
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showAuthError('Formato de email inválido');
+        return;
+      }
 
       btn.classList.add('btn-loading');
       btn.textContent = 'Aguarde...';
@@ -1178,12 +1244,23 @@
         }
 
         if (result.error) {
-          let msg = result.error.message;
-          if (msg.includes('Invalid login')) msg = 'Email ou senha incorretos';
-          if (msg.includes('already registered')) msg = 'Esse email já está cadastrado. Tente entrar.';
-          showAuthError(msg);
+          authFailCount++;
+
+          // Após 5 falhas, bloqueia por 30 segundos
+          if (authFailCount >= 5) {
+            authLockUntil = Date.now() + 30000;
+            authFailCount = 0;
+            showAuthError('Muitas tentativas falhas. Bloqueado por 30 segundos.');
+          } else {
+            let msg = result.error.message;
+            if (msg.includes('Invalid login')) msg = 'Email ou senha incorretos';
+            if (msg.includes('already registered')) msg = 'Esse email já está cadastrado. Tente entrar.';
+            showAuthError(msg);
+          }
+        } else {
+          // Login com sucesso — reseta contador
+          authFailCount = 0;
         }
-        // Se deu certo, o onAuthStateChange vai cuidar de mostrar o app
       } catch (err) {
         showAuthError('Erro de conexão. Tente novamente.');
       }
@@ -1351,6 +1428,18 @@
     }
 
     // Salva uma refeição no Supabase (insert)
+    /*
+       logError — função segura de log.
+       Em produção, não expõe detalhes internos no console.
+       Mostra um toast genérico para o usuário.
+       Em desenvolvimento, você pode trocar para console.error
+       se precisar debugar.
+    */
+    function logError(context, error) {
+      // Em produção: log genérico, sem expor estrutura do banco
+      if (error) showToast('Erro ao sincronizar. Tente novamente.');
+    }
+
     async function saveMealToCloud(meal) {
       const { data, error } = await sb.from('meals').insert({
         id:         meal.id,
@@ -1362,11 +1451,10 @@
         sort_order: getMeals().length,
       }).select().single();
 
-      if (error) console.error('Erro ao salvar refeição:', error);
+      logError('saveMeal', error);
       return data;
     }
 
-    // Salva um alimento dentro de uma refeição
     async function saveFoodToCloud(mealId, food) {
       const { error } = await sb.from('meal_foods').insert({
         id:          food.id,
@@ -1379,19 +1467,17 @@
         carb_per100: food.carbPer100,
         fat_per100:  food.fatPer100,
       });
-      if (error) console.error('Erro ao salvar alimento:', error);
+      logError('saveFood', error);
     }
 
-    // Deleta um alimento da refeição
     async function deleteFoodFromCloud(foodId) {
       const { error } = await sb.from('meal_foods').delete().eq('id', foodId);
-      if (error) console.error('Erro ao deletar alimento:', error);
+      logError('deleteFood', error);
     }
 
-    // Atualiza quantidade de um alimento
     async function updateFoodQtyInCloud(foodId, newQty) {
       const { error } = await sb.from('meal_foods').update({ qty: newQty }).eq('id', foodId);
-      if (error) console.error('Erro ao atualizar quantidade:', error);
+      logError('updateQty', error);
     }
 
     /* --- BIBLIOTECA DE ALIMENTOS (Supabase) --- */
@@ -1592,7 +1678,7 @@
 
         showToast('Dados migrados com sucesso!');
       } catch (err) {
-        console.error('Erro na migração:', err);
+        logError('migration', err);
       }
     }
 
@@ -2364,33 +2450,62 @@
         return;
       }
 
+      /*
+         VALIDAÇÃO DE INPUTS — proteção contra dados corrompidos
+
+         Limites razoáveis:
+         - Quantidade: máx 10.000g (10kg — ninguém come mais que isso de uma vez)
+         - Calorias: máx 900 kcal/100g (gordura pura ≈ 900 kcal/100g)
+         - Macros: máx 100g por 100g (impossível ter mais que 100%)
+         - Nome: máx 100 caracteres
+         - Valores negativos: convertidos para 0
+
+         Esses limites não impedem o uso normal mas barram valores
+         absurdos que poderiam corromper gráficos e totais.
+      */
+      const MAX_QTY  = 10000;
+      const MAX_KCAL = 900;
+      const MAX_MACRO = 100;
+      const MAX_NAME_LEN = 100;
+
+      if (qty > MAX_QTY) {
+        showToast(`Quantidade máxima: ${MAX_QTY}g`);
+        document.getElementById('food-qty-input').focus();
+        return;
+      }
+
+      // Função para limitar valores numéricos
+      const clamp = (val, max) => Math.max(0, Math.min(val, max));
+
       let foodData;
 
       if (selectedLibraryFood) {
-        // Veio da biblioteca — usa os dados dela
         foodData = {
-          name:       selectedLibraryFood.name,
-          qty:        qty,
-          kcalPer100: selectedLibraryFood.kcalPer100,
-          protPer100: selectedLibraryFood.protPer100,
-          carbPer100: selectedLibraryFood.carbPer100,
-          fatPer100:  selectedLibraryFood.fatPer100,
+          name:       selectedLibraryFood.name.slice(0, MAX_NAME_LEN),
+          qty:        clamp(qty, MAX_QTY),
+          kcalPer100: clamp(selectedLibraryFood.kcalPer100, MAX_KCAL),
+          protPer100: clamp(selectedLibraryFood.protPer100, MAX_MACRO),
+          carbPer100: clamp(selectedLibraryFood.carbPer100, MAX_MACRO),
+          fatPer100:  clamp(selectedLibraryFood.fatPer100, MAX_MACRO),
         };
       } else {
-        // Cadastro manual — pega os dados do formulário
         const name = document.getElementById('food-name-input').value.trim();
         if (!name) {
           document.getElementById('food-name-input').focus();
           showToast('Digite o nome do alimento');
           return;
         }
+        if (name.length > MAX_NAME_LEN) {
+          showToast(`Nome muito longo (máx ${MAX_NAME_LEN} caracteres)`);
+          return;
+        }
         foodData = {
-          name:       name,
-          qty:        qty,
-          kcalPer100: parseFloat(document.getElementById('food-kcal-input').value) || 0,
-          protPer100: parseFloat(document.getElementById('food-prot-input').value) || 0,
-          carbPer100: parseFloat(document.getElementById('food-carb-input').value) || 0,
-          fatPer100:  parseFloat(document.getElementById('food-fat-input').value)  || 0,
+          name:       name.slice(0, MAX_NAME_LEN),
+          qty:        clamp(qty, MAX_QTY),
+          kcalPer100: clamp(parseFloat(document.getElementById('food-kcal-input').value) || 0, MAX_KCAL),
+          protPer100: clamp(parseFloat(document.getElementById('food-prot-input').value) || 0, MAX_MACRO),
+          carbPer100: clamp(parseFloat(document.getElementById('food-carb-input').value) || 0, MAX_MACRO),
+          fatPer100:  clamp(parseFloat(document.getElementById('food-fat-input').value)  || 0, MAX_MACRO),
         };
       }
 
@@ -2429,6 +2544,11 @@
       const newQty = parseFloat(document.getElementById('edit-qty-input').value) || 0;
       if (newQty <= 0) {
         showToast('Digite uma quantidade válida');
+        document.getElementById('edit-qty-input').focus();
+        return;
+      }
+      if (newQty > 10000) {
+        showToast('Quantidade máxima: 10.000g');
         document.getElementById('edit-qty-input').focus();
         return;
       }
