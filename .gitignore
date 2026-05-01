@@ -1,0 +1,40 @@
+# Segredos / credenciais — NUNCA commitar
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials.json
+service-account.json
+
+# Vercel — pode conter project_id e org_id que ajudam reconhaissance
+.vercel
+
+# Editores / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build / dependências (caso o projeto migre para frameworks)
+node_modules/
+dist/
+build/
+.cache/
+coverage/
+
+# Backups locais
+*.bak
+*.backup
+*.orig

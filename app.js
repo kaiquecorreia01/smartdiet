@@ -28,6 +28,7 @@ let editMealEmoji       = '';
 let editingMealId       = null;
 let editingFoodId       = null;
 let authMode            = 'login';
+let foodLibraryCache    = []; // escopo do módulo (fora de window — não acessível por scripts terceiros)
 
 /* =====================================================================
    TEMA (dark/light) — inicializa antes de tudo
@@ -108,7 +109,7 @@ function toggleAuthMode() {
     : 'Crie sua conta gratuita para começar';
   document.getElementById('auth-error').classList.remove('visible');
   document.getElementById('auth-password').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
-};
+}
 
 function showAuthError(msg) {
   const el = document.getElementById('auth-error');
@@ -132,7 +133,16 @@ document.getElementById('btn-auth').addEventListener('click', async () => {
   }
 
   if (!email || !password) { showAuthError('Preencha email e senha'); return; }
-  if (password.length < 6) { showAuthError('A senha precisa ter pelo menos 6 caracteres'); return; }
+  if (email.length > 254)  { showAuthError('Email muito longo'); return; }
+  if (password.length > 128) { showAuthError('Senha muito longa'); return; }
+  if (authMode === 'signup') {
+    if (password.length < 8)        { showAuthError('A senha precisa ter pelo menos 8 caracteres'); return; }
+    if (!/[A-Za-z]/.test(password)) { showAuthError('A senha deve conter letras'); return; }
+    if (!/\d/.test(password))       { showAuthError('A senha deve conter pelo menos um número'); return; }
+  } else {
+    // login: aceita senhas antigas curtas (compatibilidade), mas bloqueia inputs absurdos
+    if (password.length < 6) { showAuthError('Senha inválida'); return; }
+  }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAuthError('Formato de email inválido'); return; }
 
   btn.classList.add('btn-loading');
@@ -197,8 +207,21 @@ sb.auth.onAuthStateChange(async (event, session) => {
     document.getElementById('bottom-nav').classList.remove('hidden');
     await initApp();
   } else {
+    // Logout — zera TODO o estado em memória para evitar vazamento entre usuários
+    // no mesmo browser (CWE-200 / OWASP A01:2021).
     currentUser = null;
     _appInitialized = false;
+    allData = {};
+    goals = { kcal: 2000, prot: 150, carb: 200, fat: 65 };
+    foodLibraryCache = [];
+    activeMealId = null;
+    selectedLibraryFood = null;
+    editingMealId = null;
+    editingFoodId = null;
+    editingMealRef = null;
+    currentDate = getTodayStr();
+    _confirmCallback = null;
+
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('app-container').classList.add('hidden');
     document.getElementById('bottom-nav').classList.add('hidden');
@@ -268,7 +291,7 @@ async function updateFoodQtyInCloud(foodId, newQty) {
 }
 
 /* --- BIBLIOTECA --- */
-function loadLibrary() { return window._foodLibraryCache || []; }
+function loadLibrary() { return foodLibraryCache; }
 
 async function loadLibraryFromCloud() {
   const { data, error } = await sb
@@ -305,7 +328,7 @@ async function upsertLibraryFood(food) {
       usageCount: data.usage_count,
     });
   }
-  window._foodLibraryCache = library;
+  foodLibraryCache = library;
   return library;
 }
 
@@ -321,7 +344,7 @@ function searchLibrary(query) {
 
 async function deleteLibraryFood(foodId) {
   await sb.from('food_library').delete().eq('id', foodId);
-  window._foodLibraryCache = loadLibrary().filter(item => item.id !== foodId);
+  foodLibraryCache = foodLibraryCache.filter(item => item.id !== foodId);
 }
 
 /* --- METAS --- */
@@ -338,71 +361,22 @@ async function saveGoals() {
   );
 }
 
-/* --- MIGRAÇÃO LEGADO --- */
-async function migrateLocalData() {
-  const localKey = 'dietlog_diary';
-  const raw = localStorage.getItem(localKey);
-  if (!raw) return;
-  try {
-    const localData = JSON.parse(raw);
-    const dates = Object.keys(localData);
-    if (dates.length === 0) return;
-    showToast('Migrando seus dados para a nuvem...');
-    for (const date of dates) {
-      const day = localData[date];
-      if (!day.meals || day.meals.length === 0) continue;
-      for (const meal of day.meals) {
-        const { data: savedMeal } = await sb.from('meals').insert({
-          user_id: currentUser.id, name: meal.name,
-          emoji: meal.emoji || '🍽️', time: meal.time || '--:--', date,
-        }).select().single();
-        if (!savedMeal) continue;
-        for (const food of (meal.foods || [])) {
-          await sb.from('meal_foods').insert({
-            meal_id: savedMeal.id, user_id: currentUser.id,
-            name: food.name, qty: food.qty,
-            kcal_per100: food.kcalPer100 || 0, prot_per100: food.protPer100 || 0,
-            carb_per100: food.carbPer100 || 0, fat_per100: food.fatPer100 || 0,
-          });
-        }
-      }
-    }
-    const localLib = localStorage.getItem('dietlog_library');
-    if (localLib) {
-      for (const food of JSON.parse(localLib)) {
-        await sb.from('food_library').insert({
-          user_id: currentUser.id, name: food.name,
-          kcal_per100: food.kcalPer100 || 0, prot_per100: food.protPer100 || 0,
-          carb_per100: food.carbPer100 || 0, fat_per100: food.fatPer100 || 0,
-          usage_count: food.usageCount || 1,
-        });
-      }
-    }
-    const localGoals = localStorage.getItem('dietlog_goals');
-    if (localGoals) {
-      const g = JSON.parse(localGoals);
-      await sb.from('user_goals').upsert({
-        user_id: currentUser.id, kcal: g.kcal || 2000,
-        prot: g.prot || 150, carb: g.carb || 200, fat: g.fat || 65,
-      });
-    }
-    localStorage.removeItem(localKey);
-    localStorage.removeItem('dietlog_library');
-    localStorage.removeItem('dietlog_goals');
-    localStorage.removeItem('dietlog_data');
-    showToast('Dados migrados com sucesso!');
-  } catch (err) {
-    logError('migration', err);
-  }
+/* --- LIMPEZA DE LOCALSTORAGE LEGADO ---
+   A migração one-shot do localStorage foi removida (CWE-639):
+   se um User A usasse o app antes da migração e User B logasse no mesmo
+   browser, os dados de A iam para o DB de B. Apenas removemos restos. */
+function purgeLegacyLocalStorage() {
+  ['dietlog_diary','dietlog_library','dietlog_goals','dietlog_data']
+    .forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
 }
 
 /* =====================================================================
    INICIALIZAÇÃO
 ===================================================================== */
 async function initApp() {
-  await migrateLocalData();
+  purgeLegacyLocalStorage();
   await loadGoals();
-  window._foodLibraryCache = await loadLibraryFromCloud();
+  foodLibraryCache = await loadLibraryFromCloud();
   await loadDiaryData();
   renderThemeToggle();
   render();
@@ -565,7 +539,9 @@ function createMealCard(meal) {
 
   card.querySelector('.meal-card-header').addEventListener('click', () => card.classList.toggle('expanded'));
 
-  // Delegação de eventos — sem onclick inline
+  // Delegação de eventos — um único handler. A condição que disparava
+  // dois `openEditQtyModal` foi removida; a edição de quantidade é tratada
+  // pelo handler abaixo de `food-row` (sem `data-action`).
   card.addEventListener('click', e => {
     const action = e.target.closest('[data-action]')?.dataset?.action;
     if (!action) return;
@@ -577,13 +553,9 @@ function createMealCard(meal) {
     if (action === 'delete')      confirmDeleteMeal(mealId);
     if (action === 'add-food')    openFoodModal(mealId);
     if (action === 'delete-food') confirmDeleteFood(mealId, foodId);
-    if (action === 'edit-food' || e.target.closest('.food-row')?.dataset?.action !== 'delete-food') {
-      const row = e.target.closest('.food-row');
-      if (row && action !== 'delete-food') openEditQtyModal(row.dataset.mealId, row.dataset.foodId);
-    }
   });
 
-  // Clique em food-row para editar quantidade
+  // Clique na food-row (exceto no botão de excluir) abre edição de quantidade
   card.querySelectorAll('.food-row').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.closest('.food-delete-btn')) return;
@@ -725,6 +697,12 @@ async function saveEditMeal() {
 /* =====================================================================
    DUPLICAR DIA
 ===================================================================== */
+// Handler do click no list — registrado UMA vez, na inicialização
+function handleDuplicateListClick(e) {
+  const item = e.target.closest('.duplicate-day-item');
+  if (item) executeDuplicate(item.dataset.date);
+}
+
 async function openDuplicateModal() {
   document.getElementById('modal-duplicate').classList.add('active');
   const listEl = document.getElementById('duplicate-day-list');
@@ -751,11 +729,6 @@ async function openDuplicateModal() {
       <span class="duplicate-day-info">${dateMap[date]} refeição(ões)</span>
     </div>`;
   }).join('');
-
-  listEl.addEventListener('click', e => {
-    const item = e.target.closest('.duplicate-day-item');
-    if (item) executeDuplicate(item.dataset.date);
-  });
 }
 
 function closeDuplicateModal() {
@@ -768,23 +741,40 @@ async function executeDuplicate(sourceDate) {
   const sourceDay = await loadDayFromCloud(sourceDate);
   if (!sourceDay.meals || sourceDay.meals.length === 0) { showToast('Dia sem refeições'); return; }
 
+  // Defesa em profundidade: aplica os mesmos limites do modal de cadastro
+  // antes de inserir (CHECK constraints no DB são a 2ª camada).
+  const clamp = (v, max) => Math.max(0, Math.min(Number(v) || 0, max));
+  const MAX_QTY = 10000, MAX_KCAL = 900, MAX_MACRO = 100, MAX_NAME = 100;
+
   for (const meal of sourceDay.meals) {
     const newMealId = crypto.randomUUID();
-    const newMeal = { id: newMealId, name: meal.name, emoji: meal.emoji, time: meal.time, foods: [] };
+    const cleanName  = String(meal.name || '').slice(0, MAX_NAME);
+    const cleanEmoji = String(meal.emoji || '🍽️').slice(0, 10);
+    const cleanTime  = String(meal.time || '--:--').slice(0, 10);
+    const newMeal = { id: newMealId, name: cleanName, emoji: cleanEmoji, time: cleanTime, foods: [] };
     await sb.from('meals').insert({
       id: newMealId, user_id: currentUser.id,
-      name: meal.name, emoji: meal.emoji, time: meal.time,
+      name: cleanName, emoji: cleanEmoji, time: cleanTime,
       date: currentDate, sort_order: getMeals().length,
     });
     for (const food of meal.foods) {
       const newFoodId = crypto.randomUUID();
+      const cleanFood = {
+        id: newFoodId,
+        name: String(food.name || '').slice(0, MAX_NAME),
+        qty: clamp(food.qty, MAX_QTY),
+        kcalPer100: clamp(food.kcalPer100, MAX_KCAL),
+        protPer100: clamp(food.protPer100, MAX_MACRO),
+        carbPer100: clamp(food.carbPer100, MAX_MACRO),
+        fatPer100:  clamp(food.fatPer100,  MAX_MACRO),
+      };
       await sb.from('meal_foods').insert({
         id: newFoodId, meal_id: newMealId, user_id: currentUser.id,
-        name: food.name, qty: food.qty,
-        kcal_per100: food.kcalPer100, prot_per100: food.protPer100,
-        carb_per100: food.carbPer100, fat_per100: food.fatPer100,
+        name: cleanFood.name, qty: cleanFood.qty,
+        kcal_per100: cleanFood.kcalPer100, prot_per100: cleanFood.protPer100,
+        carb_per100: cleanFood.carbPer100, fat_per100: cleanFood.fatPer100,
       });
-      newMeal.foods.push({ id: newFoodId, ...food });
+      newMeal.foods.push(cleanFood);
     }
     ensureDay(currentDate);
     allData[currentDate].meals.push(newMeal);
@@ -1143,8 +1133,12 @@ async function loadWeightChart(last7, gridColor, textColor) {
       .in('date', last7).order('date');
 
     if (error) {
-      document.getElementById('weight-chart-section').innerHTML =
-        '<p style="font-size:13px;color:var(--text-muted);text-align:center;padding:16px 0;">Para usar o gráfico de peso, execute o SQL em <strong>supabase-weight.sql</strong> no painel do Supabase.</p>';
+      const sec = document.getElementById('weight-chart-section');
+      sec.textContent = '';
+      const p = document.createElement('p');
+      p.style.cssText = 'font-size:13px;color:var(--text-muted);text-align:center;padding:16px 0;';
+      p.textContent = 'Tabela de peso indisponível. Execute supabase-migration.sql no painel do Supabase.';
+      sec.appendChild(p);
       return;
     }
 
@@ -1235,8 +1229,12 @@ async function loadWeightProfile() {
       .order('date', { ascending: false }).limit(10);
 
     if (error) {
-      document.getElementById('weight-section-body').innerHTML =
-        '<p style="font-size:13px;color:var(--text-muted);">Para usar o registro de peso, execute o SQL em <code>supabase-weight.sql</code> no painel do Supabase.</p>';
+      const body = document.getElementById('weight-section-body');
+      body.textContent = '';
+      const p = document.createElement('p');
+      p.style.cssText = 'font-size:13px;color:var(--text-muted);';
+      p.textContent = 'Registro de peso indisponível. Execute supabase-migration.sql no painel do Supabase.';
+      body.appendChild(p);
       return;
     }
 
@@ -1403,9 +1401,10 @@ document.getElementById('edit-meal-type-grid').addEventListener('click', e => {
   editMealEmoji = option.dataset.emoji;
 });
 
-// Modal duplicar
+// Modal duplicar — handler do list registrado UMA vez (evita memory leak)
 document.getElementById('btn-duplicate-day').addEventListener('click', openDuplicateModal);
 document.getElementById('btn-cancel-duplicate').addEventListener('click', closeDuplicateModal);
+document.getElementById('duplicate-day-list').addEventListener('click', handleDuplicateListClick);
 
 // Modal objetivos
 document.getElementById('btn-open-goals').addEventListener('click', openGoalsModal);

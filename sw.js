@@ -1,7 +1,7 @@
-// SmartDiet Service Worker — permite instalar como app
-// Cache básico para funcionar offline (estrutura do app)
-const CACHE_NAME = 'smartdiet-v2';
-const URLS_TO_CACHE = ['/'];
+// SmartDiet Service Worker — instala como app + offline básico
+// IMPORTANTE: bump CACHE_NAME a cada deploy que mexer em assets.
+const CACHE_NAME = 'smartdiet-v3';
+const URLS_TO_CACHE = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -19,19 +19,29 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Network first, fallback to cache — somente GET de recursos do próprio app
-// Chamadas à API do Supabase (POST/PUT/DELETE) nunca devem ser cacheadas
+// Network-first, fallback to cache. Apenas GETs same-origin e não-Supabase.
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  if (event.request.url.includes('supabase.co')) return;
+  const req = event.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  // Só intercepta same-origin — evita CORS e supply-chain accidental
+  if (url.origin !== self.location.origin) return;
+
+  // Nunca cacheia o próprio sw.js
+  if (url.pathname.endsWith('/sw.js')) return;
 
   event.respondWith(
-    fetch(event.request)
+    fetch(req)
       .then(response => {
+        // Não cacheia respostas opacas/erro
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
+        }
         const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(req))
   );
 });
