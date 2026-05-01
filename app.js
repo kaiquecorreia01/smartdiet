@@ -201,6 +201,17 @@ sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user) {
     currentUser = session.user; // sempre atualiza — TOKEN_REFRESHED rota o JWT sem reinicializar
     if (_appInitialized) return;
+
+    // Valida a sessão contra o servidor — se a conta foi apagada/banida,
+    // o JWT cacheado no localStorage ainda parece válido (assinado, não expirou),
+    // mas o user não existe mais. Sem essa checagem, o app entra "logado em
+    // fantasma" e todas as queries falham silenciosamente.
+    const { data: verified, error: verifyError } = await sb.auth.getUser();
+    if (verifyError || !verified?.user) {
+      await sb.auth.signOut(); // dispara o branch de logout abaixo
+      return;
+    }
+
     _appInitialized = true;
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-container').classList.remove('hidden');
