@@ -185,15 +185,20 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
   await sb.auth.signOut();
 });
 
+let _appInitialized = false;
+
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user) {
-    currentUser = session.user;
+    currentUser = session.user; // sempre atualiza — TOKEN_REFRESHED rota o JWT sem reinicializar
+    if (_appInitialized) return;
+    _appInitialized = true;
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-container').classList.remove('hidden');
     document.getElementById('bottom-nav').classList.remove('hidden');
     await initApp();
   } else {
     currentUser = null;
+    _appInitialized = false;
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('app-container').classList.add('hidden');
     document.getElementById('bottom-nav').classList.add('hidden');

@@ -1,6 +1,6 @@
 // SmartDiet Service Worker — permite instalar como app
 // Cache básico para funcionar offline (estrutura do app)
-const CACHE_NAME = 'smartdiet-v1';
+const CACHE_NAME = 'smartdiet-v2';
 const URLS_TO_CACHE = ['/'];
 
 self.addEventListener('install', event => {
