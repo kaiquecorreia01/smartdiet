@@ -711,10 +711,14 @@
 
   <!--
     SUPABASE CLIENT — biblioteca oficial.
-    Carregamos via CDN (como fizemos com as fontes).
-    Depois no JS, usamos window.supabase para criar o client.
+    Versão pinada + SRI (Subresource Integrity): o navegador rejeita o script
+    se o hash não bater — protege contra supply chain attack via CDN comprometida.
   -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.1/dist/umd/supabase.min.js"
+    integrity="sha384-sfbOag7cEcqn2DK53T/iBNAH/2cMCf7bSzJDwBhV117A0z/NIj9Usei1jKIBY1Ae"
+    crossorigin="anonymous"
+  ></script>
 </head>
 
 <body>
@@ -1187,6 +1191,8 @@
         ? 'Entre para acessar seus dados de qualquer lugar'
         : 'Crie sua conta gratuita para começar';
       document.getElementById('auth-error').classList.remove('visible');
+      // autocomplete correto sinaliza ao gerenciador de senhas se é login ou cadastro
+      document.getElementById('auth-password').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
     }
 
     function showAuthError(msg) {
@@ -1254,7 +1260,8 @@
           } else {
             let msg = result.error.message;
             if (msg.includes('Invalid login')) msg = 'Email ou senha incorretos';
-            if (msg.includes('already registered')) msg = 'Esse email já está cadastrado. Tente entrar.';
+            // mensagem genérica — não confirma se o email existe (evita user enumeration)
+            if (msg.includes('already registered')) msg = 'Não foi possível criar a conta. Verifique seus dados ou entre na conta existente.';
             showAuthError(msg);
           }
         } else {
