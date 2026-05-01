@@ -119,8 +119,14 @@ function showAuthError(msg) {
 
 let authFailCount = 0;
 let authLockUntil = 0;
+let isAuthInFlight = false; // guarda contra cliques duplos / Enter repetido
 
 document.getElementById('btn-auth').addEventListener('click', async () => {
+  // Guard de re-entrada — bloqueia dupla submissão antes mesmo de tocar no DOM.
+  // Sem isso, dois cliques (ou dois Enters) disparam dois requests ao Supabase
+  // e o servidor responde com rate-limit.
+  if (isAuthInFlight) return;
+
   const email    = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
   const btn      = document.getElementById('btn-auth');
@@ -145,6 +151,8 @@ document.getElementById('btn-auth').addEventListener('click', async () => {
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAuthError('Formato de email inválido'); return; }
 
+  isAuthInFlight = true;
+  btn.disabled = true;
   btn.classList.add('btn-loading');
   btn.textContent = 'Aguarde...';
   document.getElementById('auth-error').classList.remove('visible');
@@ -158,27 +166,52 @@ document.getElementById('btn-auth').addEventListener('click', async () => {
     }
 
     if (result.error) {
-      authFailCount++;
-      if (authFailCount >= 5) {
-        authLockUntil = Date.now() + 30000;
-        authFailCount = 0;
-        showAuthError('Muitas tentativas falhas. Bloqueado por 30 segundos.');
+      const rawMsg = (result.error.message || '').toLowerCase();
+      const status = result.error.status || 0;
+
+      // Detecta rate-limit do servidor Supabase. NÃO conta como tentativa local
+      // (a culpa não é do usuário) e mostra mensagem clara em PT-BR.
+      const isRateLimit =
+        status === 429 ||
+        rawMsg.includes('rate limit') ||
+        rawMsg.includes('too many requests') ||
+        rawMsg.includes('over_email_send_rate_limit');
+
+      if (isRateLimit) {
+        // bloqueia cliques por 60s para o IP "esfriar" no Supabase
+        authLockUntil = Date.now() + 60000;
+        showAuthError('O servidor recebeu muitas tentativas deste IP. Aguarde cerca de 1 minuto e tente de novo.');
       } else {
-        let msg = result.error.message;
-        if (msg.includes('Invalid login')) msg = 'Email ou senha incorretos';
-        // mensagem genérica — não confirma existência da conta (evita user enumeration)
-        if (msg.includes('already registered')) msg = 'Não foi possível criar a conta. Verifique seus dados ou entre na conta existente.';
-        showAuthError(msg);
+        // erros reais de credencial / validação contam para o lockout local
+        authFailCount++;
+        if (authFailCount >= 5) {
+          authLockUntil = Date.now() + 30000;
+          authFailCount = 0;
+          showAuthError('Muitas tentativas falhas. Bloqueado por 30 segundos.');
+        } else {
+          let msg = result.error.message;
+          if (rawMsg.includes('invalid login') || rawMsg.includes('invalid credentials')) {
+            msg = 'Email ou senha incorretos';
+          } else if (rawMsg.includes('email not confirmed')) {
+            msg = 'Confirme seu email antes de entrar (verifique sua caixa de entrada).';
+          } else if (rawMsg.includes('already registered') || rawMsg.includes('user already')) {
+            // genérica — não confirma existência da conta (evita user enumeration)
+            msg = 'Não foi possível criar a conta. Verifique seus dados ou entre na conta existente.';
+          }
+          showAuthError(msg);
+        }
       }
     } else {
       authFailCount = 0;
     }
   } catch (_) {
     showAuthError('Erro de conexão. Tente novamente.');
+  } finally {
+    isAuthInFlight = false;
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+    btn.textContent = authMode === 'login' ? 'Entrar' : 'Criar conta';
   }
-
-  btn.classList.remove('btn-loading');
-  btn.textContent = authMode === 'login' ? 'Entrar' : 'Criar conta';
 });
 
 document.getElementById('auth-password').addEventListener('keydown', e => {
