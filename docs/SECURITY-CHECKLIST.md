@@ -18,7 +18,7 @@ Itens que **só você** consegue aplicar pelos painéis. Marque conforme for faz
       do Vercel (ex.: `https://smartdiet.vercel.app`). Sem `localhost` em prod.
 - [ ] **Auth → URL Configuration → Redirect URLs**: lista branca estrita.
 - [ ] **Database → Tables → Enable RLS em todas as tabelas.** Já feito via
-      `supabase-migration.sql`, mas confirme nos toggles do dashboard.
+      `supabase/migrations/001-initial.sql`, mas confirme nos toggles do dashboard.
 - [ ] **Database → Indexes**: verificar que `idx_meal_foods_user`,
       `meals_user_date_idx`, `weight_logs_user_date_idx`, `food_library_usage_idx`
       existem (ajudam contra DoS por slow queries).

@@ -157,9 +157,19 @@ git push
 
 ```
 smartdiet/
-├── index.html          # App completo (HTML + CSS + JS)
-├── manifest.json       # PWA manifest
-├── sw.js              # Service Worker
-├── CLAUDE.md          # Este arquivo
-└── supabase-setup.sql # SQL de criação das tabelas (já executado)
+├── README.md                # Visão geral do projeto (cartão de visita)
+├── CLAUDE.md                # Este arquivo
+├── index.html               # Shell HTML (sem JS/CSS inline)
+├── style.css                # Estilos
+├── app.js                   # Lógica do app
+├── sw.js                    # Service Worker (PWA)
+├── manifest.json            # PWA manifest
+├── vercel.json              # Headers de segurança + cache
+├── docs/
+│   └── SECURITY-CHECKLIST.md
+└── supabase/
+    ├── setup.sql            # Schema completo (idempotente)
+    └── migrations/
+        ├── 001-initial.sql
+        └── 002-weight-history.sql
 ```

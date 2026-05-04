@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS user_goals (
 -- 5. TABELA: weight_logs (histórico de peso corporal)
 -- Cada save no app é um registro novo (sem UNIQUE em date) — o usuário pode
 -- registrar o peso quantas vezes quiser por dia. Veja
--- supabase-migration-weight-history.sql para migrar bancos antigos.
+-- supabase/migrations/002-weight-history.sql para migrar bancos antigos.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS weight_logs (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1402,7 +1402,7 @@ async function loadWeightChart(_last7, gridColor, textColor) {
       sec.textContent = '';
       const p = document.createElement('p');
       p.style.cssText = 'font-size:13px;color:var(--text-muted);text-align:center;padding:16px 0;';
-      p.textContent = 'Tabela de peso indisponível. Execute supabase-migration-weight-history.sql no painel do Supabase.';
+      p.textContent = 'Tabela de peso indisponível. Execute supabase/migrations/002-weight-history.sql no painel do Supabase.';
       sec.appendChild(p);
       return;
     }
@@ -1534,7 +1534,7 @@ async function loadWeightProfile() {
       body.textContent = '';
       const p = document.createElement('p');
       p.style.cssText = 'font-size:13px;color:var(--text-muted);';
-      p.textContent = 'Registro de peso indisponível. Execute supabase-migration-weight-history.sql no painel do Supabase.';
+      p.textContent = 'Registro de peso indisponível. Execute supabase/migrations/002-weight-history.sql no painel do Supabase.';
       body.appendChild(p);
       return;
     }
