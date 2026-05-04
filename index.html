@@ -92,13 +92,25 @@
 
       <div class="form-group">
         <label class="form-label" for="auth-password">Senha</label>
-        <input type="password" id="auth-password" class="form-input" placeholder="Mínimo 8 caracteres (letras + números)" autocomplete="current-password" maxlength="128" minlength="6" />
+        <div class="password-wrapper">
+          <input type="password" id="auth-password" class="form-input" placeholder="Mínimo 8 caracteres (letras + números)" autocomplete="current-password" maxlength="128" minlength="6" />
+          <button type="button" class="password-toggle-btn" data-target="auth-password" aria-label="Mostrar senha" title="Mostrar senha">
+            <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
       </div>
 
       <!-- Confirmar senha — só aparece no modo cadastro (controlado por app.js) -->
       <div class="form-group" id="auth-confirm-group" style="display:none;">
         <label class="form-label" for="auth-password-confirm">Confirmar senha</label>
-        <input type="password" id="auth-password-confirm" class="form-input" placeholder="Repita a senha" autocomplete="new-password" maxlength="128" />
+        <div class="password-wrapper">
+          <input type="password" id="auth-password-confirm" class="form-input" placeholder="Repita a senha" autocomplete="new-password" maxlength="128" />
+          <button type="button" class="password-toggle-btn" data-target="auth-password-confirm" aria-label="Mostrar senha" title="Mostrar senha">
+            <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
       </div>
 
       <button class="btn btn-confirm" id="btn-auth" style="width:100%;margin-top:8px">Entrar</button>
@@ -149,11 +161,23 @@
       <div class="auth-error" id="reset-error"></div>
       <div class="form-group">
         <label class="form-label" for="reset-password">Nova senha</label>
-        <input type="password" id="reset-password" class="form-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password" maxlength="128" />
+        <div class="password-wrapper">
+          <input type="password" id="reset-password" class="form-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password" maxlength="128" />
+          <button type="button" class="password-toggle-btn" data-target="reset-password" aria-label="Mostrar senha" title="Mostrar senha">
+            <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label" for="reset-password-confirm">Confirmar nova senha</label>
-        <input type="password" id="reset-password-confirm" class="form-input" placeholder="Repita a senha" autocomplete="new-password" maxlength="128" />
+        <div class="password-wrapper">
+          <input type="password" id="reset-password-confirm" class="form-input" placeholder="Repita a senha" autocomplete="new-password" maxlength="128" />
+          <button type="button" class="password-toggle-btn" data-target="reset-password-confirm" aria-label="Mostrar senha" title="Mostrar senha">
+            <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-confirm" id="btn-save-new-password" style="width:100%;">Salvar nova senha</button>

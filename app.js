@@ -233,6 +233,21 @@ document.getElementById('auth-password-confirm').addEventListener('keydown', e =
   if (e.key === 'Enter') document.getElementById('btn-auth').click();
 });
 
+// Toggle de visibilidade da senha (olhinho) — handler único para todos os botões.
+// Cada botão tem data-target apontando para o id do input correspondente.
+document.querySelectorAll('.password-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.target;
+    const input    = document.getElementById(targetId);
+    if (!input) return;
+    const willShow = input.type === 'password';
+    input.type = willShow ? 'text' : 'password';
+    btn.classList.toggle('is-visible', willShow);
+    btn.setAttribute('aria-label',  willShow ? 'Ocultar senha' : 'Mostrar senha');
+    btn.setAttribute('title',       willShow ? 'Ocultar senha' : 'Mostrar senha');
+  });
+});
+
 // Auth toggle — sem onclick inline (permite remover 'unsafe-inline' do CSP)
 document.getElementById('auth-toggle-link').addEventListener('click', toggleAuthMode);
 document.getElementById('auth-toggle-link').addEventListener('keydown', e => {

@@ -601,6 +601,32 @@ body {
 }
 .section-card-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.07em; }
 
+/* Toggle de visibilidade da senha (olhinho) */
+.password-wrapper { position: relative; }
+.password-wrapper .form-input { padding-right: 40px; }
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.password-toggle-btn:hover { color: var(--text-primary); background: var(--bg-elevated); }
+.password-toggle-btn:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.password-toggle-btn svg { display: block; pointer-events: none; }
+.password-toggle-btn .icon-eye-off { display: none; }
+.password-toggle-btn.is-visible .icon-eye { display: none; }
+.password-toggle-btn.is-visible .icon-eye-off { display: block; }
+
 /* Peso corporal */
 .weight-input-row { display: flex; gap: 8px; margin-bottom: 4px; }
 .weight-input-row .form-input { margin: 0; }
