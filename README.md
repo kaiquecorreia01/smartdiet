@@ -181,20 +181,6 @@ Sempre que alterar assets (`app.js`, `style.css`, `index.html`), incrementar `CA
 
 ---
 
-## Contribuindo
-
-Issues e PRs são bem-vindos. Para mudanças grandes, abrir uma issue antes para discutir a abordagem.
-
-Convenções:
-- **Idioma da UI:** PT-BR
-- **Idioma do código:** identificadores em inglês, comentários em português
-- **Commits:** [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `security:`, `docs:`)
-- **IDs:** UUID v4 (`crypto.randomUUID()`)
-- **Toda inserção de dado de usuário em `innerHTML` DEVE passar por `escapeHTML()`**
-- **Toda query nova em tabela DEVE confiar no RLS, nunca apenas em filtros JS**
-
----
-
 ## Autor
 
 [@kaiquecorreia01](https://github.com/kaiquecorreia01)
