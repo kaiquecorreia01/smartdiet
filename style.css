@@ -607,14 +607,18 @@ body {
 .btn-sm { padding: 10px 14px; flex: 0; white-space: nowrap; border-radius: var(--radius-md); font-family: var(--font-main); font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; background: var(--accent); color: #0a1a10; }
 .btn-sm:hover { background: #86efac; }
 
-.weight-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.weight-list {
+  margin-top: 12px; display: flex; flex-direction: column; gap: 6px;
+  max-height: 320px; overflow-y: auto; padding-right: 2px;
+}
 .weight-entry {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 10px; background: var(--bg-elevated);
-  border-radius: var(--radius-md); font-size: 13px;
+  border-radius: var(--radius-md); font-size: 13px; gap: 8px;
 }
-.weight-entry-date { color: var(--text-secondary); }
-.weight-entry-value { font-family: var(--font-mono); font-weight: 500; color: var(--text-primary); }
+.weight-entry-date { color: var(--text-secondary); display: flex; flex-direction: column; }
+.weight-entry-time { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+.weight-entry-value { font-family: var(--font-mono); font-weight: 500; color: var(--text-primary); margin-left: auto; }
 .weight-entry-delete { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 4px; transition: all 0.15s; }
 .weight-entry-delete:hover { color: var(--danger); background: var(--danger-dim); }
 

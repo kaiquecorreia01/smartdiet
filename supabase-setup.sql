@@ -73,19 +73,21 @@ CREATE TABLE IF NOT EXISTS user_goals (
 );
 
 -- ============================================================
--- 5. TABELA: weight_logs (registro de peso corporal)
+-- 5. TABELA: weight_logs (histórico de peso corporal)
+-- Cada save no app é um registro novo (sem UNIQUE em date) — o usuário pode
+-- registrar o peso quantas vezes quiser por dia. Veja
+-- supabase-migration-weight-history.sql para migrar bancos antigos.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS weight_logs (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   date        date NOT NULL,
   weight_kg   numeric(5,2) NOT NULL CHECK (weight_kg > 0 AND weight_kg <= 500),
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  -- Um registro de peso por usuário por dia
-  UNIQUE (user_id, date)
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS weight_logs_user_date_idx ON weight_logs (user_id, date DESC);
+CREATE INDEX IF NOT EXISTS weight_logs_user_date_idx    ON weight_logs (user_id, date DESC);
+CREATE INDEX IF NOT EXISTS weight_logs_user_created_idx ON weight_logs (user_id, created_at DESC);
 
 -- ============================================================
 -- 6. RLS — Row Level Security

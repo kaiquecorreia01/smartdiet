@@ -101,14 +101,21 @@ function logError(context, error) {
 ===================================================================== */
 function toggleAuthMode() {
   authMode = authMode === 'login' ? 'signup' : 'login';
-  document.getElementById('btn-auth').textContent = authMode === 'login' ? 'Entrar' : 'Criar conta';
-  document.getElementById('auth-toggle-text').textContent = authMode === 'login' ? 'Não tem conta?' : 'Já tem conta?';
-  document.getElementById('auth-toggle-link').textContent = authMode === 'login' ? 'Criar conta' : 'Entrar';
-  document.getElementById('auth-subtitle').textContent = authMode === 'login'
+  const isLogin = authMode === 'login';
+  document.getElementById('btn-auth').textContent = isLogin ? 'Entrar' : 'Criar conta';
+  document.getElementById('auth-toggle-text').textContent = isLogin ? 'Não tem conta?' : 'Já tem conta?';
+  document.getElementById('auth-toggle-link').textContent = isLogin ? 'Criar conta' : 'Entrar';
+  document.getElementById('auth-subtitle').textContent = isLogin
     ? 'Entre para acessar seus dados de qualquer lugar'
     : 'Crie sua conta gratuita para começar';
   document.getElementById('auth-error').classList.remove('visible');
-  document.getElementById('auth-password').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
+  document.getElementById('auth-password').autocomplete = isLogin ? 'current-password' : 'new-password';
+
+  // Mostra "confirmar senha" apenas no signup; "esqueci minha senha" apenas no login
+  document.getElementById('auth-confirm-group').style.display = isLogin ? 'none' : '';
+  document.getElementById('auth-forgot-row').style.display    = isLogin ? '' : 'none';
+  // Limpa o campo de confirmar para evitar valores velhos atrapalhando
+  document.getElementById('auth-password-confirm').value = '';
 }
 
 function showAuthError(msg) {
@@ -142,9 +149,12 @@ document.getElementById('btn-auth').addEventListener('click', async () => {
   if (email.length > 254)  { showAuthError('Email muito longo'); return; }
   if (password.length > 128) { showAuthError('Senha muito longa'); return; }
   if (authMode === 'signup') {
+    const passwordConfirm = document.getElementById('auth-password-confirm').value;
     if (password.length < 8)        { showAuthError('A senha precisa ter pelo menos 8 caracteres'); return; }
     if (!/[A-Za-z]/.test(password)) { showAuthError('A senha deve conter letras'); return; }
     if (!/\d/.test(password))       { showAuthError('A senha deve conter pelo menos um número'); return; }
+    if (!passwordConfirm)           { showAuthError('Confirme sua senha'); return; }
+    if (password !== passwordConfirm) { showAuthError('As senhas não coincidem'); return; }
   } else {
     // login: aceita senhas antigas curtas (compatibilidade), mas bloqueia inputs absurdos
     if (password.length < 6) { showAuthError('Senha inválida'); return; }
@@ -218,10 +228,170 @@ document.getElementById('auth-password').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-auth').click();
 });
 
+// Confirmar senha — Enter dispara o botão de cadastro
+document.getElementById('auth-password-confirm').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-auth').click();
+});
+
 // Auth toggle — sem onclick inline (permite remover 'unsafe-inline' do CSP)
 document.getElementById('auth-toggle-link').addEventListener('click', toggleAuthMode);
 document.getElementById('auth-toggle-link').addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAuthMode(); }
+});
+
+/* =====================================================================
+   ESQUECI MINHA SENHA — abre modal, envia link de recuperação
+===================================================================== */
+function showForgotError(msg) {
+  const el = document.getElementById('forgot-error');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function openForgotModal() {
+  document.getElementById('forgot-error').classList.remove('visible');
+  document.getElementById('forgot-email').value = document.getElementById('auth-email').value.trim();
+  document.getElementById('modal-forgot').classList.add('active');
+  setTimeout(() => document.getElementById('forgot-email').focus(), 50);
+}
+
+function closeForgotModal() {
+  document.getElementById('modal-forgot').classList.remove('active');
+}
+
+let isForgotInFlight = false;
+
+async function sendForgotEmail() {
+  if (isForgotInFlight) return;
+  const email = document.getElementById('forgot-email').value.trim();
+  const btn   = document.getElementById('btn-send-forgot');
+
+  if (!email) { showForgotError('Informe seu email'); return; }
+  if (email.length > 254) { showForgotError('Email muito longo'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showForgotError('Formato de email inválido'); return; }
+
+  isForgotInFlight = true;
+  btn.disabled = true;
+  btn.classList.add('btn-loading');
+  btn.textContent = 'Enviando...';
+  document.getElementById('forgot-error').classList.remove('visible');
+
+  try {
+    // O Supabase processa o link automaticamente quando o app carrega
+    // (parsing do hash). O event PASSWORD_RECOVERY dispara em onAuthStateChange.
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (error) {
+      const rawMsg = (error.message || '').toLowerCase();
+      if (error.status === 429 || rawMsg.includes('rate limit') || rawMsg.includes('too many')) {
+        showForgotError('Muitas tentativas. Aguarde alguns minutos antes de tentar de novo.');
+      } else {
+        showForgotError('Não foi possível enviar o email. Tente novamente em instantes.');
+      }
+    } else {
+      // Sempre mostra mensagem genérica de sucesso (não confirma se o email existe — evita user enumeration)
+      closeForgotModal();
+      showToast('Se o email estiver cadastrado, você receberá o link em instantes.');
+    }
+  } catch (_) {
+    showForgotError('Erro de conexão. Tente novamente.');
+  } finally {
+    isForgotInFlight = false;
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+    btn.textContent = 'Enviar email';
+  }
+}
+
+document.getElementById('auth-forgot-link').addEventListener('click', openForgotModal);
+document.getElementById('auth-forgot-link').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openForgotModal(); }
+});
+document.getElementById('btn-cancel-forgot').addEventListener('click', closeForgotModal);
+document.getElementById('btn-send-forgot').addEventListener('click', sendForgotEmail);
+document.getElementById('forgot-email').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendForgotEmail();
+});
+
+/* =====================================================================
+   REDEFINIR SENHA — modal aparece quando o usuário entra via link de recovery
+===================================================================== */
+let isResetInFlight = false;
+let isInRecoveryFlow = false; // bloqueia o init do app durante o reset
+
+function showResetError(msg) {
+  const el = document.getElementById('reset-error');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function openResetPasswordModal() {
+  document.getElementById('reset-error').classList.remove('visible');
+  document.getElementById('reset-password').value = '';
+  document.getElementById('reset-password-confirm').value = '';
+  // Garante que a tela de auth está visível por trás (não o app)
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app-container').classList.add('hidden');
+  document.getElementById('bottom-nav').classList.add('hidden');
+  document.getElementById('modal-reset-password').classList.add('active');
+  setTimeout(() => document.getElementById('reset-password').focus(), 50);
+}
+
+function closeResetPasswordModal() {
+  document.getElementById('modal-reset-password').classList.remove('active');
+}
+
+async function saveNewPassword() {
+  if (isResetInFlight) return;
+  const pw1 = document.getElementById('reset-password').value;
+  const pw2 = document.getElementById('reset-password-confirm').value;
+  const btn = document.getElementById('btn-save-new-password');
+
+  if (!pw1 || !pw2)            { showResetError('Preencha as duas senhas'); return; }
+  if (pw1.length < 8)          { showResetError('A senha precisa ter pelo menos 8 caracteres'); return; }
+  if (pw1.length > 128)        { showResetError('Senha muito longa'); return; }
+  if (!/[A-Za-z]/.test(pw1))   { showResetError('A senha deve conter letras'); return; }
+  if (!/\d/.test(pw1))         { showResetError('A senha deve conter pelo menos um número'); return; }
+  if (pw1 !== pw2)             { showResetError('As senhas não coincidem'); return; }
+
+  isResetInFlight = true;
+  btn.disabled = true;
+  btn.classList.add('btn-loading');
+  btn.textContent = 'Salvando...';
+  document.getElementById('reset-error').classList.remove('visible');
+
+  try {
+    const { error } = await sb.auth.updateUser({ password: pw1 });
+    if (error) {
+      const rawMsg = (error.message || '').toLowerCase();
+      if (rawMsg.includes('same') && rawMsg.includes('password')) {
+        showResetError('A nova senha não pode ser igual à anterior.');
+      } else if (rawMsg.includes('session') || rawMsg.includes('token')) {
+        showResetError('O link de recuperação expirou. Solicite outro.');
+      } else {
+        showResetError('Não foi possível atualizar a senha. Tente novamente.');
+      }
+    } else {
+      // Sucesso — desloga, fecha tudo e volta pro login com a nova senha
+      isInRecoveryFlow = false;
+      closeResetPasswordModal();
+      await sb.auth.signOut();
+      showToast('Senha atualizada! Entre com a nova senha.');
+    }
+  } catch (_) {
+    showResetError('Erro de conexão. Tente novamente.');
+  } finally {
+    isResetInFlight = false;
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+    btn.textContent = 'Salvar nova senha';
+  }
+}
+
+document.getElementById('btn-save-new-password').addEventListener('click', saveNewPassword);
+document.getElementById('reset-password-confirm').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveNewPassword();
 });
 
 document.getElementById('btn-logout').addEventListener('click', async () => {
@@ -231,6 +401,20 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
 let _appInitialized = false;
 
 sb.auth.onAuthStateChange(async (event, session) => {
+  // Fluxo de "esqueci minha senha": quando o usuário clica no link do email,
+  // o SDK do Supabase abre uma sessão temporária e dispara PASSWORD_RECOVERY.
+  // Não inicializamos o app — abrimos o modal de definir nova senha.
+  if (event === 'PASSWORD_RECOVERY') {
+    isInRecoveryFlow = true;
+    currentUser = session?.user || null;
+    openResetPasswordModal();
+    return;
+  }
+
+  // Se estamos no fluxo de recovery, ignoramos SIGNED_IN/TOKEN_REFRESHED
+  // (a sessão temporária não deve abrir o app, só serve para o updateUser).
+  if (isInRecoveryFlow && event !== 'SIGNED_OUT') return;
+
   if (session && session.user) {
     currentUser = session.user; // sempre atualiza — TOKEN_REFRESHED rota o JWT sem reinicializar
     if (_appInitialized) return;
@@ -1169,27 +1353,60 @@ async function loadChartsView() {
   await loadWeightChart(last7, gridColor, textColor);
 }
 
-async function loadWeightChart(last7, gridColor, textColor) {
+async function loadWeightChart(_last7, gridColor, textColor) {
   try {
+    // Carrega TODO o histórico de peso (até 365 registros), ordenado cronologicamente.
+    // O usuário pode ter vários registros no mesmo dia (histórico real).
     const { data, error } = await sb
-      .from('weight_logs').select('date, weight_kg')
+      .from('weight_logs').select('date, weight_kg, created_at')
       .eq('user_id', currentUser.id)
-      .in('date', last7).order('date');
+      .order('created_at', { ascending: true })
+      .limit(365);
 
     if (error) {
       const sec = document.getElementById('weight-chart-section');
       sec.textContent = '';
       const p = document.createElement('p');
       p.style.cssText = 'font-size:13px;color:var(--text-muted);text-align:center;padding:16px 0;';
-      p.textContent = 'Tabela de peso indisponível. Execute supabase-migration.sql no painel do Supabase.';
+      p.textContent = 'Tabela de peso indisponível. Execute supabase-migration-weight-history.sql no painel do Supabase.';
       sec.appendChild(p);
       return;
     }
 
-    const wByDate = {};
-    (data || []).forEach(w => { wByDate[w.date] = w.weight_kg; });
-    const labels    = last7.map(d => strToDate(d).toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' }));
-    const weightData = last7.map(d => wByDate[d] || null);
+    const entries = data || [];
+    if (entries.length === 0) {
+      // Sem registros — mostra mensagem amigável dentro do canvas wrapper
+      const ctx = document.getElementById('chart-weight').getContext('2d');
+      chartWeight = new Chart(ctx, {
+        type: 'line',
+        data: { labels: ['—'], datasets: [{ label: 'Peso (kg)', data: [null] }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false },
+            title: { display: true, text: 'Nenhum peso registrado ainda', color: textColor, font: { size: 13, weight: 'normal' } }
+          },
+          scales: {
+            x: { grid: { color: gridColor }, ticks: { color: textColor } },
+            y: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => v + ' kg' } }
+          }
+        }
+      });
+      return;
+    }
+
+    // Cada ponto = um registro do histórico. Label é a data (curta) — se houver
+    // vários no mesmo dia, mostra a hora também.
+    const labels = entries.map((w, i) => {
+      const sameDayCount = entries.filter(x => x.date === w.date).length;
+      const dt = w.created_at ? new Date(w.created_at) : strToDate(w.date);
+      if (sameDayCount > 1) {
+        return dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      }
+      return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    });
+    const weightData = entries.map(w => Number(w.weight_kg));
 
     const ctx = document.getElementById('chart-weight').getContext('2d');
     chartWeight = new Chart(ctx, {
@@ -1204,15 +1421,18 @@ async function loadWeightChart(last7, gridColor, textColor) {
           tension: 0.3,
           spanGaps: true,
           pointBackgroundColor: '#818cf8',
-          pointRadius: 4,
+          pointRadius: entries.length > 50 ? 2 : 4,
           fill: true,
         }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.raw} kg` } }
+        },
         scales: {
-          x: { grid: { color: gridColor }, ticks: { color: textColor } },
+          x: { grid: { color: gridColor }, ticks: { color: textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
           y: { grid: { color: gridColor }, ticks: { color: textColor, callback: v => v + ' kg' } }
         }
       }
@@ -1264,20 +1484,23 @@ async function loadProfileView() {
   await loadWeightProfile();
 }
 
-/* --- PESO CORPORAL no perfil --- */
+/* --- PESO CORPORAL no perfil — histórico completo --- */
 async function loadWeightProfile() {
   try {
+    // Ordena por created_at DESC (mais recentes primeiro). Usamos created_at
+    // em vez de date porque pode haver vários registros no mesmo dia.
     const { data, error } = await sb
-      .from('weight_logs').select('id, date, weight_kg')
+      .from('weight_logs').select('id, date, weight_kg, created_at')
       .eq('user_id', currentUser.id)
-      .order('date', { ascending: false }).limit(10);
+      .order('created_at', { ascending: false })
+      .limit(100);
 
     if (error) {
       const body = document.getElementById('weight-section-body');
       body.textContent = '';
       const p = document.createElement('p');
       p.style.cssText = 'font-size:13px;color:var(--text-muted);';
-      p.textContent = 'Registro de peso indisponível. Execute supabase-migration.sql no painel do Supabase.';
+      p.textContent = 'Registro de peso indisponível. Execute supabase-migration-weight-history.sql no painel do Supabase.';
       body.appendChild(p);
       return;
     }
@@ -1292,39 +1515,64 @@ function renderWeightList(entries) {
     el.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">Nenhum registro ainda.</div>';
     return;
   }
-  el.innerHTML = entries.map(w => `
+  el.innerHTML = entries.map(w => {
+    const dt = w.created_at ? new Date(w.created_at) : strToDate(w.date);
+    const dateStr = dt.toLocaleDateString('pt-BR');
+    const timeStr = w.created_at
+      ? dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return `
     <div class="weight-entry">
-      <span class="weight-entry-date">${escapeHTML(formatDateShort(w.date))}</span>
+      <span class="weight-entry-date">
+        ${escapeHTML(dateStr)}
+        ${timeStr ? `<span class="weight-entry-time">${escapeHTML(timeStr)}</span>` : ''}
+      </span>
       <span class="weight-entry-value">${w.weight_kg} kg</span>
       <button class="weight-entry-delete" data-id="${escapeHTML(w.id)}" title="Remover">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   el.querySelectorAll('.weight-entry-delete').forEach(btn => {
     btn.addEventListener('click', () => {
       showConfirm('Remover este registro de peso?', 'Remover peso', async () => {
         await sb.from('weight_logs').delete().eq('id', btn.dataset.id);
         await loadWeightProfile();
+        // Atualiza o gráfico se a view de gráficos já estiver montada
+        if (currentView === 'graficos') await loadChartsView();
       }, true);
     });
   });
 }
 
+let isSavingWeight = false; // evita duplo save
+
 async function saveWeight() {
+  if (isSavingWeight) return;
   const input = document.getElementById('weight-input');
+  const btn   = document.getElementById('btn-save-weight');
   const val   = parseFloat(input.value);
   if (!val || val <= 0 || val > 500) { showToast('Peso inválido (1–500 kg)'); return; }
 
   const weight_kg = Math.round(val * 10) / 10;
   const date      = getTodayStr();
 
-  const { error } = await sb.from('weight_logs').upsert(
-    { user_id: currentUser.id, date, weight_kg },
-    { onConflict: 'user_id,date' }
-  );
+  isSavingWeight = true;
+  btn.disabled = true;
+
+  // INSERT (não upsert) — cada save vira um novo registro do histórico
+  const { error } = await sb.from('weight_logs').insert({
+    user_id: currentUser.id, date, weight_kg
+  });
+
+  isSavingWeight = false;
+  btn.disabled = false;
+
   if (error) { logError('saveWeight', error); return; }
   input.value = '';
   showToast(`Peso ${weight_kg} kg registrado`);
   await loadWeightProfile();
+  // Mantém o gráfico em sincronia se o usuário voltar para a view de gráficos
+  if (currentView === 'graficos') await loadChartsView();
 }
 
 /* =====================================================================
@@ -1531,20 +1779,24 @@ document.getElementById('btn-confirm-yes').addEventListener('click', () => {
 document.getElementById('btn-confirm-no').addEventListener('click', closeConfirmModal);
 
 // Fechar modais clicando fora
-['modal-meal','modal-food','modal-edit-qty','modal-goals','modal-duplicate','modal-edit-meal','modal-confirm'].forEach(id => {
+// (modal-reset-password fica de fora — não pode ser fechado: usuário precisa
+// definir uma nova senha, senão fica numa sessão temporária inutilizável)
+['modal-meal','modal-food','modal-edit-qty','modal-goals','modal-duplicate','modal-edit-meal','modal-confirm','modal-forgot'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target.id === id) {
       closeMealModal(); closeFoodModal(); closeEditQtyModal();
       closeGoalsModal(); closeDuplicateModal(); closeEditMealModal(); closeConfirmModal();
+      closeForgotModal();
     }
   });
 });
 
-// Escape fecha todos os modais
+// Escape fecha todos os modais (exceto reset-password — ver acima)
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeMealModal(); closeFoodModal(); closeEditQtyModal();
     closeGoalsModal(); closeDuplicateModal(); closeEditMealModal(); closeConfirmModal();
+    closeForgotModal();
   }
 });
 

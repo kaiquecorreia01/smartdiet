@@ -95,12 +95,68 @@
         <input type="password" id="auth-password" class="form-input" placeholder="Mínimo 8 caracteres (letras + números)" autocomplete="current-password" maxlength="128" minlength="6" />
       </div>
 
+      <!-- Confirmar senha — só aparece no modo cadastro (controlado por app.js) -->
+      <div class="form-group" id="auth-confirm-group" style="display:none;">
+        <label class="form-label" for="auth-password-confirm">Confirmar senha</label>
+        <input type="password" id="auth-password-confirm" class="form-input" placeholder="Repita a senha" autocomplete="new-password" maxlength="128" />
+      </div>
+
       <button class="btn btn-confirm" id="btn-auth" style="width:100%;margin-top:8px">Entrar</button>
+
+      <!-- Esqueci minha senha — só aparece no modo login (controlado por app.js) -->
+      <div class="auth-toggle" id="auth-forgot-row">
+        <a id="auth-forgot-link" role="button" tabindex="0" style="cursor:pointer;color:var(--text-muted);text-decoration:none;font-size:13px;">Esqueci minha senha</a>
+      </div>
 
       <div class="auth-toggle">
         <span id="auth-toggle-text">Não tem conta?</span>
         <!-- sem onclick inline — event listener adicionado em app.js (elimina 'unsafe-inline' do CSP) -->
         <a id="auth-toggle-link" role="button" tabindex="0" style="cursor:pointer;color:var(--accent);text-decoration:none;">Criar conta</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: ESQUECI MINHA SENHA
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-forgot" role="dialog" aria-modal="true" aria-labelledby="modal-forgot-title">
+    <div class="modal">
+      <div class="modal-title" id="modal-forgot-title">Recuperar senha</div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+        Informe o email da sua conta. Você receberá um link para redefinir sua senha.
+      </p>
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="form-group">
+        <label class="form-label" for="forgot-email">Email</label>
+        <input type="email" id="forgot-email" class="form-input" placeholder="seu@email.com" autocomplete="email" maxlength="254" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btn-cancel-forgot">Cancelar</button>
+        <button class="btn btn-confirm" id="btn-send-forgot">Enviar email</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+    MODAL: REDEFINIR SENHA (após clicar no link do email)
+  ================================================================ -->
+  <div class="modal-overlay" id="modal-reset-password" role="dialog" aria-modal="true" aria-labelledby="modal-reset-title">
+    <div class="modal">
+      <div class="modal-title" id="modal-reset-title">Definir nova senha</div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+        Escolha uma senha nova com pelo menos 8 caracteres, incluindo letras e números.
+      </p>
+      <div class="auth-error" id="reset-error"></div>
+      <div class="form-group">
+        <label class="form-label" for="reset-password">Nova senha</label>
+        <input type="password" id="reset-password" class="form-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password" maxlength="128" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="reset-password-confirm">Confirmar nova senha</label>
+        <input type="password" id="reset-password-confirm" class="form-input" placeholder="Repita a senha" autocomplete="new-password" maxlength="128" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-confirm" id="btn-save-new-password" style="width:100%;">Salvar nova senha</button>
       </div>
     </div>
   </div>
@@ -249,9 +305,9 @@
           </div>
         </div>
 
-        <!-- Gráfico de peso -->
+        <!-- Gráfico de peso — evolução completa do histórico -->
         <div class="chart-card" id="weight-chart-section">
-          <div class="chart-card-title">Peso corporal — últimos 7 dias</div>
+          <div class="chart-card-title">Peso corporal — evolução</div>
           <div class="chart-wrapper">
             <canvas id="chart-weight" aria-label="Gráfico de peso corporal"></canvas>
           </div>
@@ -332,7 +388,7 @@
           />
           <button class="btn-sm" id="btn-save-weight">Salvar</button>
         </div>
-        <div class="form-hint" style="margin-bottom:8px;">em kg — registra o peso de hoje</div>
+        <div class="form-hint" style="margin-bottom:8px;">em kg — cada save cria um novo registro no histórico</div>
         <div class="weight-list" id="weight-list"></div>
       </div>
 
