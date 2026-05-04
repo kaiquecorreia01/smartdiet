@@ -179,18 +179,31 @@ document.getElementById('btn-auth').addEventListener('click', async () => {
       const rawMsg = (result.error.message || '').toLowerCase();
       const status = result.error.status || 0;
 
-      // Detecta rate-limit do servidor Supabase. NÃO conta como tentativa local
-      // (a culpa não é do usuário) e mostra mensagem clara em PT-BR.
-      const isRateLimit =
-        status === 429 ||
-        rawMsg.includes('rate limit') ||
-        rawMsg.includes('too many requests') ||
-        rawMsg.includes('over_email_send_rate_limit');
+      // O Supabase tem DOIS tipos de rate-limit que podem aparecer aqui:
+      //  1) "email send rate limit" — cota de envios de email do projeto inteiro
+      //     (default: ~3-4 emails/hora no plano free). Atinge signup e recovery.
+      //  2) Rate-limit de IP — proteção contra brute-force, por endereço.
+      // Diferenciar é importante porque o usuário não pode "trocar de IP" para
+      // contornar o caso 1.
+      const isEmailQuota =
+        rawMsg.includes('email rate limit') ||
+        rawMsg.includes('over_email_send_rate_limit') ||
+        rawMsg.includes('email send rate');
 
-      if (isRateLimit) {
-        // bloqueia cliques por 60s para o IP "esfriar" no Supabase
+      const isIpRateLimit =
+        !isEmailQuota && (
+          status === 429 ||
+          rawMsg.includes('rate limit') ||
+          rawMsg.includes('too many requests')
+        );
+
+      if (isEmailQuota) {
+        // Bloqueia cliques por 60s para evitar mais tentativas inúteis
         authLockUntil = Date.now() + 60000;
-        showAuthError('O servidor recebeu muitas tentativas deste IP. Aguarde cerca de 1 minuto e tente de novo.');
+        showAuthError('O sistema de envio de emails atingiu o limite por hora. Aguarde cerca de 1 hora e tente novamente — ou peça ao desenvolvedor para configurar SMTP customizado no Supabase.');
+      } else if (isIpRateLimit) {
+        authLockUntil = Date.now() + 60000;
+        showAuthError('Muitas tentativas vindas deste IP. Aguarde cerca de 1 minuto e tente de novo.');
       } else {
         // erros reais de credencial / validação contam para o lockout local
         authFailCount++;
@@ -299,7 +312,13 @@ async function sendForgotEmail() {
     });
     if (error) {
       const rawMsg = (error.message || '').toLowerCase();
-      if (error.status === 429 || rawMsg.includes('rate limit') || rawMsg.includes('too many')) {
+      const isEmailQuota =
+        rawMsg.includes('email rate limit') ||
+        rawMsg.includes('over_email_send_rate_limit') ||
+        rawMsg.includes('email send rate');
+      if (isEmailQuota) {
+        showForgotError('O sistema de envio de emails atingiu o limite por hora. Aguarde cerca de 1 hora antes de tentar novamente.');
+      } else if (error.status === 429 || rawMsg.includes('rate limit') || rawMsg.includes('too many')) {
         showForgotError('Muitas tentativas. Aguarde alguns minutos antes de tentar de novo.');
       } else {
         showForgotError('Não foi possível enviar o email. Tente novamente em instantes.');
