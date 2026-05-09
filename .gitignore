@@ -38,3 +38,8 @@ coverage/
 *.bak
 *.backup
 *.orig
+
+# Arquivos de contexto/anotações que ficam só locais (não vão pro repositório público)
+CLAUDE.md
+HANDOFF.md
+docs/
