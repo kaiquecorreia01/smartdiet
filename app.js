@@ -30,6 +30,12 @@ let editingFoodId       = null;
 let authMode            = 'login';
 let foodLibraryCache    = []; // escopo do módulo (fora de window — não acessível por scripts terceiros)
 
+// Mapa mealId → Promise do INSERT de meals em voo. Usado para serializar
+// "salvar refeição" → "salvar alimento": sem isso, criar refeição e adicionar
+// alimento rapidamente faz o INSERT em meal_foods chegar antes do INSERT em
+// meals, e a FK + a RLS policy ("EXISTS meals WHERE id=meal_id") falham.
+const pendingMealSaves = new Map();
+
 /* =====================================================================
    TEMA (dark/light) — inicializa antes de tudo
 ===================================================================== */
@@ -59,7 +65,18 @@ function renderThemeToggle() {
 /* =====================================================================
    UTILITÁRIOS
 ===================================================================== */
-function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+// Converte um Date para "YYYY-MM-DD" usando o fuso LOCAL do usuário.
+// IMPORTANTE: nunca usar toISOString() para isso — toISOString devolve UTC.
+// No Brasil (UTC-3), entre ~21h e meia-noite o resultado de toISOString
+// já está no DIA SEGUINTE, fazendo o app salvar refeições na data errada.
+function dateToLocalStr(d) {
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getTodayStr() { return dateToLocalStr(new Date()); }
 
 function strToDate(str) {
   const [y, m, d] = str.split('-').map(Number);
@@ -75,7 +92,7 @@ function formatDateShort(str) { return strToDate(str).toLocaleDateString('pt-BR'
 function offsetDate(str, days) {
   const d = strToDate(str);
   d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return dateToLocalStr(d);
 }
 
 function calcMacro(valuePer100, qty) { return Math.round((valuePer100 / 100) * qty * 10) / 10; }
@@ -457,17 +474,43 @@ sb.auth.onAuthStateChange(async (event, session) => {
     // o JWT cacheado no localStorage ainda parece válido (assinado, não expirou),
     // mas o user não existe mais. Sem essa checagem, o app entra "logado em
     // fantasma" e todas as queries falham silenciosamente.
-    const { data: verified, error: verifyError } = await sb.auth.getUser();
-    if (verifyError || !verified?.user) {
-      await sb.auth.signOut(); // dispara o branch de logout abaixo
-      return;
+    //
+    // IMPORTANTE: erro de rede / 5xx NÃO desloga o usuário. Antes esse bloco
+    // chamava signOut() em qualquer falha, então qualquer hiccup de rede no
+    // boot jogava o usuário fora ("login às vezes vai, às vezes não"). Agora
+    // só deslogamos quando o servidor responde definitivamente que o JWT
+    // não vale (401/403) ou que o user não existe.
+    try {
+      const { data: verified, error: verifyError } = await sb.auth.getUser();
+      if (verifyError) {
+        const status = verifyError.status || 0;
+        if (status === 401 || status === 403) {
+          await sb.auth.signOut();
+          return;
+        }
+        // outros (rede, 5xx, timeout) → confia no JWT local e segue
+      } else if (!verified?.user) {
+        // resposta válida mas sem user — conta deletada
+        await sb.auth.signOut();
+        return;
+      }
+    } catch (_) {
+      // exceção (rede caiu de vez) — segue confiando no JWT local;
+      // se for inválido, as queries seguintes vão falhar com erro real.
     }
 
     _appInitialized = true;
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-container').classList.remove('hidden');
     document.getElementById('bottom-nav').classList.remove('hidden');
-    await initApp();
+    try {
+      await initApp();
+    } catch (_) {
+      // Se initApp falhar (rede), libera o flag pra que um novo evento
+      // de auth (ex.: TOKEN_REFRESHED) consiga retentar o boot.
+      _appInitialized = false;
+      showToast('Falha ao carregar dados. Recarregue a página.');
+    }
   } else {
     // Logout — zera TODO o estado em memória para evitar vazamento entre usuários
     // no mesmo browser (CWE-200 / OWASP A01:2021).
@@ -522,11 +565,11 @@ async function loadDiaryData() {
   allData[currentDate] = await loadDayFromCloud(currentDate);
 }
 
-async function saveMealToCloud(meal) {
+async function saveMealToCloud(meal, date, sortOrder) {
   const { data, error } = await sb.from('meals').insert({
     id: meal.id, user_id: currentUser.id, name: meal.name,
-    emoji: meal.emoji, time: meal.time, date: currentDate,
-    sort_order: getMeals().length,
+    emoji: meal.emoji, time: meal.time, date,
+    sort_order: sortOrder,
   }).select().single();
   logError('saveMeal', error);
   return data;
@@ -832,12 +875,19 @@ function createMealCard(meal) {
    AÇÕES DO DIÁRIO
 ===================================================================== */
 async function addMeal(name, emoji, time) {
-  ensureDay(currentDate);
+  // Snapshot da data: se o usuário trocar de dia enquanto o INSERT está em voo,
+  // a refeição precisa ser persistida no dia em que foi criada — não no atual.
+  const date = currentDate;
+  ensureDay(date);
   const newMeal = { id: crypto.randomUUID(), name, emoji, time: time || '--:--', foods: [] };
-  allData[currentDate].meals.push(newMeal);
+  allData[date].meals.push(newMeal);
+  const sortOrder = allData[date].meals.length;
   render();
   showToast(`Refeição "${name}" criada`);
-  await saveMealToCloud(newMeal);
+  const savePromise = saveMealToCloud(newMeal, date, sortOrder);
+  pendingMealSaves.set(newMeal.id, savePromise);
+  try { await savePromise; }
+  finally { pendingMealSaves.delete(newMeal.id); }
 }
 
 async function addFood(mealId, food) {
@@ -851,6 +901,14 @@ async function addFood(mealId, food) {
     if (card) card.classList.add('expanded');
   }, 0);
   showToast(`"${food.name}" adicionado`);
+
+  // Espera a refeição existir no DB antes de inserir o alimento.
+  // FK constraint (meal_foods.meal_id → meals) + RLS policy (EXISTS meals)
+  // falham silenciosamente se chegamos aqui antes do INSERT em meals terminar.
+  if (pendingMealSaves.has(mealId)) {
+    try { await pendingMealSaves.get(mealId); } catch (_) { /* segue mesmo assim */ }
+  }
+
   await saveFoodToCloud(mealId, newFood);
   await upsertLibraryFood(food);
   renderLibraryCount();

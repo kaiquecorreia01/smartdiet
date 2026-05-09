@@ -1,6 +1,6 @@
 // SmartDiet Service Worker — instala como app + offline básico
 // IMPORTANTE: bump CACHE_NAME a cada deploy que mexer em assets.
-const CACHE_NAME = 'smartdiet-v7';
+const CACHE_NAME = 'smartdiet-v8';
 const URLS_TO_CACHE = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', event => {
